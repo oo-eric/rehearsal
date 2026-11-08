@@ -1,0 +1,58 @@
+OWNER / OPERATORS: REHEARSAL DISPLAY
+====================================
+
+Chords, sections, and lyrics on a screen instead of paper.
+No internet needed. Nothing to install.
+
+START
+-----
+1. Double-click index.html. It opens in Safari (Chrome works too).
+2. Pick a song: arrow keys up/down, then Enter.
+3. Press F for fullscreen.
+
+Tip: drag index.html into the right-hand side of the Dock (next to the Trash)
+so it is one click next time.
+
+DURING A SONG
+-------------
+  Right arrow, Down, Space, Enter, PageDown ...... next line
+  Left arrow, Up, PageUp, Backspace .............. back a line
+  ]  or  Shift + Right ........................... next section
+  [  or  Shift + Left ............................ back a section (or top of this one)
+  Home  or  R .................................... back to bar 1
+  S  or  Esc ..................................... song list
+  F .............................................. fullscreen on/off
+
+  Mouse: click the right side of the screen = next, left side = back.
+  A wireless mouse works as a hand-held page turner.
+
+The yellow box is where you are. The top strip is the whole song map.
+"NEXT" at the bottom shows the next section's chords before you get there.
+
+TEMPO MODE (play along at the song's tempo)
+------------------------------------------
+  P ................ start/stop. One bar of count-in clicks, then it advances
+                     bar by bar by itself. The lit yellow bar is "now".
+  C ................ metronome click on/off
+  + / - ............ tempo up/down 1 bpm (remembered per song)
+  Arrows / ] [ ..... jump while it runs; it keeps time from the new spot
+
+FOOT PEDAL (when we get one)
+---------------------------
+Most Bluetooth page-turner pedals act like a keyboard, sending arrow keys or
+PageUp/PageDown, so they should just work: pair it in System Settings >
+Bluetooth, then step on it.
+
+To check what a pedal sends, press K. Step on the pedal and the panel shows the
+key and what it does. If it says "no action", the key name goes in config.js
+(instructions are at the top of that file). If you edit it in TextEdit, first
+turn OFF Edit > Substitutions > Smart Quotes, or the curly quotes it inserts
+will break the app. Then reload the page.
+
+MIDI footswitches only work in Chrome (press K, then M).
+
+KEEP THE SCREEN ON
+------------------
+If the display goes to sleep mid-song: System Settings > Lock Screen >
+"Turn display off when inactive" > Never. Or open Terminal, type
+caffeinate -d and leave that window open while you play.

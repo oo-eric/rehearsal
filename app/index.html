@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OWNER / OPERATORS Rehearsal</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="top">
+    <div id="song-id">
+      <span id="song-title">OWNER / OPERATORS</span>
+      <span id="song-meta"></span>
+    </div>
+    <div id="status">
+      <span id="mode"></span>
+      <span id="beats" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    </div>
+  </header>
+
+  <nav id="map" aria-label="Song map"></nav>
+
+  <main id="stage">
+    <div id="section-head">
+      <h1 id="section-name"></h1>
+      <span id="section-bars"></span>
+    </div>
+    <div id="rows"></div>
+  </main>
+
+  <footer id="next">
+    <span class="label">Next</span>
+    <span id="next-name"></span>
+    <span id="next-chords"></span>
+    <span id="hint">→ next · ← back · ] [ section · P tempo · S songs · K pedal setup</span>
+  </footer>
+
+  <div id="countin" hidden></div>
+
+  <div id="picker" class="overlay" data-no-nav hidden>
+    <div class="panel">
+      <h2>Songs</h2>
+      <ol id="song-list"></ol>
+      <p class="tip">↑ ↓ to choose · Enter to open · F fullscreen</p>
+    </div>
+  </div>
+
+  <div id="learn" class="overlay" data-no-nav hidden>
+    <div class="panel">
+      <h2>Pedal / clicker setup</h2>
+      <p>Press, click, or step on anything. Each input shows up below with the action it
+         triggers. If a pedal shows <b>no action</b>, add the key name to
+         <code>config.js</code>.</p>
+      <p id="midi-line"></p>
+      <ol id="learn-log"></ol>
+      <p class="tip">K to close<span id="midi-tip"> · M to turn on MIDI pedals</span></p>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="songs.example.js"></script>
+  <script src="songs.js"></script>  <!-- generated; missing in a fresh clone, which is fine -->
+  <script src="input.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
