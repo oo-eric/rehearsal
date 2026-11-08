@@ -42,6 +42,7 @@ body.idle { cursor: none; }
 #song-title { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 #song-meta { color: var(--dim); margin-left: 1.2vw; }
 #status { display: flex; align-items: center; gap: 1.2vw; }
+#song-id, #status { cursor: pointer; }
 #mode { color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.85em; }
 body.tempo #mode { color: var(--accent); font-weight: 700; }
 #beats { display: none; gap: 0.6vh; }

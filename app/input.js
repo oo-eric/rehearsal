@@ -8,13 +8,16 @@
   var handlers = [];
   var listeners = [];   // learn-panel listeners: receive every raw input event
   var midiAccess = null;
+  // Set when running inside the native Mac/iPad app (native/), which handles MIDI itself.
+  var host = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.rehearsal;
 
   function fire(action, source) {
     for (var i = 0; i < handlers.length; i++) handlers[i](action, source);
   }
 
-  function report(kind, detail, action) {
-    for (var i = 0; i < listeners.length; i++) listeners[i]({ kind: kind, detail: detail, action: action || null });
+  // info = a status line (not an input), so the panel shows no "-> action" for it
+  function report(kind, detail, action, info) {
+    for (var i = 0; i < listeners.length; i++) listeners[i]({ kind: kind, detail: detail, action: action || null, info: !!info });
   }
 
   // ---- keyboard ---------------------------------------------------------------
@@ -52,8 +55,13 @@
   });
 
   // ---- pointer (mouse / trackpad / touch) ----------------------------------------
+  // pointerup, not click: iOS WebKit never fires "click" for a tap on a plain element
+  // when the only listener is on document, so tap-to-turn would silently do nothing on
+  // an iPad. Old Safari without PointerEvent (pre-13) falls back to click.
   if (cfg.pointer) {
-    document.addEventListener("click", function (e) {
+    var evName = window.PointerEvent ? "pointerup" : "click";
+    document.addEventListener(evName, function (e) {
+      if (e.isPrimary === false || (e.pointerType === "mouse" && e.button !== 0)) return;
       if (e.target.closest && e.target.closest("[data-no-nav]")) return;
       var action = e.clientX < window.innerWidth / 3 ? "prev" : "next";
       report("pointer", (action === "prev" ? "left" : "right") + " side click", action);
@@ -61,7 +69,7 @@
     });
   }
 
-  // ---- MIDI (Chrome only) ------------------------------------------------------------
+  // ---- MIDI (Chrome via Web MIDI, or the native app via CoreMIDI) ---------------------
   function midiAction(type, number) {
     var map = cfg.midi || {};
     for (var action in map) {
@@ -74,24 +82,27 @@
     return null;
   }
 
-  function onMidi(msg) {
-    var d = msg.data, status = d[0] & 0xf0, ch = (d[0] & 0x0f) + 1;
+  function onMidi(msg) { handleMidi(msg.data, ""); }
+
+  function handleMidi(d, from) {
+    var status = d[0] & 0xf0, ch = (d[0] & 0x0f) + 1;
     var type = null, number = d[1], value = d.length > 2 ? d[2] : 127;
     if (status === 0xb0) type = "cc";
     else if (status === 0x90) type = "note";
     else if (status === 0xc0) { type = "pc"; value = 127; }
     if (!type) return;
     var action = midiAction(type, number);
-    report("midi", type + " " + number + " value " + value + " (ch " + ch + ")", action);
+    report("midi", type + " " + number + " value " + value + " (ch " + ch + ")" + (from ? "  from " + from : ""), action);
     if (action && value >= 64) fire(action, "midi");
   }
 
   function enableMidi() {
+    if (host) { host.postMessage({ cmd: "midiStatus" }); return; } // native replies via Input.note
     if (!navigator.requestMIDIAccess) {
-      report("midi", "Web MIDI not available in this browser (use Chrome for MIDI pedals)", null);
+      report("midi", "Web MIDI not available in this browser (use Chrome for MIDI pedals)", null, true);
       return;
     }
-    if (midiAccess) { report("midi", "MIDI already on", null); return; }
+    if (midiAccess) { report("midi", "MIDI already on", null, true); return; }
     navigator.requestMIDIAccess().then(function (access) {
       midiAccess = access;
       var names = [];
@@ -99,9 +110,9 @@
       access.onstatechange = function () {
         access.inputs.forEach(function (inp) { inp.onmidimessage = onMidi; });
       };
-      report("midi", "MIDI on. Inputs: " + (names.length ? names.join(", ") : "(none connected yet)"), null);
+      report("midi", "MIDI on. Inputs: " + (names.length ? names.join(", ") : "(none connected yet)"), null, true);
     }, function (err) {
-      report("midi", "MIDI permission refused: " + err, null);
+      report("midi", "MIDI permission refused: " + err, null, true);
     });
   }
 
@@ -110,6 +121,11 @@
     onRaw: function (fn) { listeners.push(fn); },
     fire: fire,
     enableMidi: enableMidi,
-    midiSupported: !!navigator.requestMIDIAccess
+    midiSupported: !!navigator.requestMIDIAccess || !!host,
+    native: !!host,
+    // native app entry points
+    fromNative: function (bytes, from) { handleMidi(bytes, from || ""); },
+    note: function (kind, detail) { report(kind, detail, null, true); },
+    post: function (msg) { if (host) host.postMessage(msg); }
   };
 })();

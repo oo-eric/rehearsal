@@ -16,6 +16,7 @@ rehearsal/
     songs.js        GENERATED from the charts. Gitignored: the lyrics stay private.
     songs.example.js  demo song, so a fresh clone runs. songs.js overrides it.
     HOW TO USE.txt  the card for whoever is at the band computer
+  native/           Mac + iPad app wrapping app/ (CoreMIDI pedals, screen-on). See native/README.md
   dist/             build output (gitignored)
 ```
 

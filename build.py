@@ -33,12 +33,13 @@ TEMPO_RE = re.compile(r"(\d{2,3})\s*bpm", re.I)
 KEY_RE = re.compile(r"bpm\s*/\s*([A-G][#b]?\s*(?:maj|min|m)?)", re.I)
 NOTE_CELL_RE = re.compile(r"^_?\((?P<note>.*)\)_?$")  # "(2 bars)", "_(synth/pad)_"
 EMPTY_CELLS = {"empty", "n.c.", "nc", "-", "%"}
+NO_CHORD_RE = re.compile(r"[\[(]?\bno chord\b[\])]?", re.I)  # "[no chord] ////" -> "N.C. ////"
 
 
 def parse_bar(cell: str) -> list[dict]:
     """'A // E //' -> [{'c':'A','b':2},{'c':'E','b':2}]; 'F#m ////' -> one 4-beat chord."""
-    cell = cell.strip()
-    if cell.lower() in EMPTY_CELLS:
+    cell = NO_CHORD_RE.sub("N.C.", cell.strip())
+    if cell.lower() in EMPTY_CELLS or set(cell.replace("N.C.", "").split()) <= {"////"}:
         return [{"c": "", "b": 4}]
     out: list[dict] = []
     for tok in cell.split():

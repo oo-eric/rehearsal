@@ -395,7 +395,10 @@
   function toggleLearn() {
     $("learn").hidden = !$("learn").hidden;
     $("midi-tip").style.display = Input.midiSupported ? "" : "none";
-    $("midi-line").textContent = Input.midiSupported
+    if (Input.native) $("midi-tip").textContent = " · M to list MIDI devices";
+    $("midi-line").textContent = Input.native
+      ? "MIDI pedals: always on in this app. Plug one in (USB or Bluetooth MIDI) and step on it. M lists connected devices."
+      : Input.midiSupported
       ? "MIDI pedals: supported in this browser (press M to turn on)."
       : "MIDI pedals: not supported in this browser. Keyboard-style pedals and clickers work everywhere; MIDI pedals need Chrome.";
   }
@@ -403,8 +406,11 @@
     if (!learnOpen()) return;
     var li = el("li");
     li.appendChild(el("b", "", ev.kind + "  "));
-    li.appendChild(document.createTextNode(ev.detail + "  →  "));
-    li.appendChild(el("i", "", ev.action || "no action"));
+    li.appendChild(document.createTextNode(ev.detail));
+    if (!ev.info) {
+      li.appendChild(document.createTextNode("  →  "));
+      li.appendChild(el("i", "", ev.action || "no action"));
+    }
     var log = $("learn-log");
     log.insertBefore(li, log.firstChild);
     while (log.children.length > 12) log.removeChild(log.lastChild);
@@ -448,8 +454,22 @@
     keepAwake();
   });
 
+  // ---- touch targets (iPad with no keyboard) ------------------------------------------
+  // Tap the song title for the song list, the mode label for tempo mode, and outside
+  // a panel to close it. The rest of the screen is the left/right page-turn zones.
+  $("top").addEventListener("click", function (e) {
+    Input.fire(e.target.closest && e.target.closest("#status") ? "play" : "songs", "pointer");
+  });
+  ["picker", "learn"].forEach(function (id) {
+    $(id).addEventListener("click", function (e) {
+      if (e.target !== $(id)) return;          // taps inside the panel do their own thing
+      if (id === "learn") toggleLearn(); else if (state.song) closePicker();
+    });
+  });
+
   // ---- fullscreen, idle cursor, screen wake ------------------------------------------
   function toggleFullscreen() {
+    if (Input.native) { Input.post({ cmd: "fullscreen" }); return; }
     var d = document, de = d.documentElement;
     var fs = d.fullscreenElement || d.webkitFullscreenElement;
     if (fs) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
@@ -493,6 +513,13 @@
   wake();
   if (saved.slug) openSong(saved.slug, saved.row || 0);
   else { openSong(SONGS[0].slug, 0); openPicker(); }
+
+  // First render can run before web fonts / final window size settle (seen in the
+  // native app on relaunch): measure again once they have.
+  function settle() { if (state.song) render(true); }
+  window.addEventListener("load", settle);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(settle);
+  setTimeout(settle, 400);
 
   // test hook (harmless in normal use)
   window.Rehearsal = { state: state, openSong: openSong, fire: Input.fire };
