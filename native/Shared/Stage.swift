@@ -68,6 +68,10 @@ final class Stage: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         webView.evaluateJavaScript("window.Input && Input.fromNative(\(arr), \(Self.js(from)))", completionHandler: nil)
     }
 
+    func sendKey(_ name: String, detail: String) {
+        webView.evaluateJavaScript("window.Input && Input.fromNativeKey(\(Self.js(name)), \(Self.js(detail)))", completionHandler: nil)
+    }
+
     private func note(_ kind: String, _ detail: String) {
         webView.evaluateJavaScript("window.Input && Input.note(\(Self.js(kind)), \(Self.js(detail)))", completionHandler: nil)
     }

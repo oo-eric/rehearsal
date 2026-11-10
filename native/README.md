@@ -9,6 +9,7 @@ a browser can't do:
 | MIDI foot pedals | Chrome only | **Built in** (CoreMIDI: USB, Bluetooth MIDI, network) |
 | Screen stays on | `caffeinate` / System Settings | **Automatic** (Mac and iPad) |
 | Click track with the iPad silent switch on | muted | **Plays** |
+| Bluetooth page-turner pedals on iPhone/iPad | only when the page has keyboard focus | **Always** (caught natively) |
 | Tap the screen to turn pages | yes | yes |
 | Update songs without rebuilding | swap `songs.js` | drop `songs.js` in the app's songs folder |
 | Icon in the Dock / home screen | no | yes |
@@ -71,9 +72,20 @@ close it.
 - `Shared/MIDIInput.swift`: CoreMIDI in. Raw messages go to JS `Input.fromNative()`,
   so the `midi` rules in `app/config.js` decide what a pedal does, same as Chrome.
 - `Shared/WebRoot.swift`: copies `app/` to Caches and swaps in a user `songs.js`
-- `iOS/AppDelegate.swift`: full screen, idle timer off, audio session `.playback`
+- `iOS/AppDelegate.swift`: scene lifecycle, full screen, idle timer off, audio session `.playback`
+- `iOS/KeyInput.swift` + `iOS/main.swift`: a `UIApplication` subclass that catches every
+  hardware key (Bluetooth page-turner pedals, keyboards) and hands it to JS
+  `Input.fromNativeKey()`, so the `keys` rules in `app/config.js` apply. WKWebView alone
+  only delivers keys while its hidden content view has focus, so pedals did nothing.
+- Notch / Dynamic Island / rounded corners: `viewport-fit=cover` in `app/index.html` plus
+  `env(safe-area-inset-*)` padding in `app/style.css` (zero everywhere else).
 - `macOS/AppDelegate.swift`: window, menus, display-sleep assertion
 
 Gotcha: `xcodebuild` with no `-destination` builds **only this Mac's architecture**
 even with `ARCHS = arm64 x86_64`. `build.sh` passes `generic/platform=macOS` and
 fails if the Intel slice is missing. Don't "simplify" that away.
+
+Gotcha: iOS 27 kills apps at launch that haven't adopted the UIScene lifecycle
+(`UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption` in the crash log).
+iOS 26 doesn't, so an iPad on 26 can look fine while every iPhone on 27 crashes. The
+window lives in `SceneDelegate`; keep `UIApplicationSceneManifest` in `project.yml`.

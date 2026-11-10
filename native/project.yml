@@ -50,6 +50,8 @@ targets:
           - UIInterfaceOrientationLandscapeRight
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
+        UIApplicationSceneManifest:            # scene lifecycle; required on iOS 27
+          UIApplicationSupportsMultipleScenes: false
         UIBackgroundModes: []
         NSBluetoothAlwaysUsageDescription: Connects to Bluetooth MIDI foot pedals.
 

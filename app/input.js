@@ -42,16 +42,18 @@
     return null;
   }
 
+  function handleKey(name, plain, detail, repeat) {
+    var action = keyAction(name, plain);
+    report("key", name + "   (" + detail + ")", action);
+    if (action && (!repeat || action === "faster" || action === "slower")) fire(action, "key");
+    return action;
+  }
+
   document.addEventListener("keydown", function (e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return; // leave Cmd-R, Cmd-Q etc. to the browser
     var name = keyName(e);
     var plain = e.key && e.key.length === 1 && e.key !== " " ? e.key.toLowerCase() : e.key;
-    var action = keyAction(name, plain);
-    report("key", name + "   (code " + e.code + ", keyCode " + e.keyCode + ")", action);
-    if (action) {
-      e.preventDefault();
-      if (!e.repeat || action === "faster" || action === "slower") fire(action, "key");
-    }
+    if (handleKey(name, plain, "code " + e.code + ", keyCode " + e.keyCode, e.repeat)) e.preventDefault();
   });
 
   // ---- pointer (mouse / trackpad / touch) ----------------------------------------
@@ -125,6 +127,9 @@
     native: !!host,
     // native app entry points
     fromNative: function (bytes, from) { handleMidi(bytes, from || ""); },
+    // iPhone/iPad: hardware keys (Bluetooth pedals, keyboards) are caught natively,
+    // because WKWebView only sees them when it happens to hold keyboard focus.
+    fromNativeKey: function (name, detail) { handleKey(name, name.replace(/^Shift\+/, ""), detail, false); },
     note: function (kind, detail) { report(kind, detail, null, true); },
     post: function (msg) { if (host) host.postMessage(msg); }
   };

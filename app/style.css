@@ -28,6 +28,10 @@ body {
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
+  /* iPhone notch / Dynamic Island / rounded corners / home indicator (needs
+     viewport-fit=cover in index.html). Zero on Macs, iPads without them, and browsers. */
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+           env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
 }
 body.idle { cursor: none; }
 
@@ -205,6 +209,8 @@ body.idle #hint { visibility: hidden; }
   position: fixed; top: 0; right: 0; bottom: 0; left: 0;
   display: flex; align-items: center; justify-content: center;
   background: rgba(5,6,8,0.88);
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+           env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
 }
 .overlay[hidden], #countin[hidden] { display: none; }
 .panel {
