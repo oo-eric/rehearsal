@@ -1,4 +1,5 @@
-// Chord playback: chord symbol -> notes -> a soft pad + bass on the Web Audio clock.
+// Chord playback: chord symbol -> notes -> a patch (pad, keys, organ, pluck) + bass,
+// on the Web Audio clock.
 // Classic script (no modules). app.js calls Chords.play() from the tempo scheduler, so
 // chords land on the same beat timeline as the click (and on linked screens).
 //
@@ -86,45 +87,132 @@
 
   function hz(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
 
-  // Play `name` on `ac` into `dest` from time t for dur seconds. Returns false if silent.
-  function play(ac, dest, name, t, dur) {
+  // ---- patches ---------------------------------------------------------------------
+  // Each patch voices the pad notes from t to end (seconds) into dest; o.spb = seconds
+  // per beat. Levels are balanced so switching patches doesn't jump in volume.
+
+  function env(ac, t, attack, peak, end, rel) {
+    var g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.setValueAtTime(peak, end);
+    g.gain.exponentialRampToValueAtTime(0.0001, end + rel);
+    return g;
+  }
+
+  function osc(ac, type, f, t, stop, detune) {
+    var o = ac.createOscillator();
+    o.type = type;
+    o.frequency.value = f;
+    if (detune) o.detune.value = detune;
+    o.start(t); o.stop(stop);
+    return o;
+  }
+
+  var PATCHES = {
+    // soft and sustained: two detuned saws per note through a lowpass
+    pad: function (ac, dest, notes, t, end) {
+      var rel = 0.18, lp = ac.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 1500; lp.Q.value = 0.4;
+      var g = env(ac, t, 0.04, 0.32 / notes.length, end, rel);
+      lp.connect(g); g.connect(dest);
+      notes.forEach(function (n) {
+        osc(ac, "sawtooth", hz(n), t, end + rel + 0.02, -7).connect(lp);
+        osc(ac, "sawtooth", hz(n), t, end + rel + 0.02, 7).connect(lp);
+      });
+    },
+
+    // electric piano: FM bell (modulator at 1x, index decaying) that fades while held
+    keys: function (ac, dest, notes, t, end) {
+      var rel = 0.25, stop = end + rel + 0.02, peak = 0.38 / notes.length;
+      notes.forEach(function (n, i) {
+        var f = hz(n + 12), at = t + i * 0.004;   // up an octave: EP sits brighter
+        var car = osc(ac, "sine", f, at, stop), mod = osc(ac, "sine", f, at, stop);
+        var idx = ac.createGain();               // modulation depth in Hz
+        idx.gain.setValueAtTime(f * 2.2, at);
+        idx.gain.exponentialRampToValueAtTime(f * 0.15, at + 0.6);
+        mod.connect(idx); idx.connect(car.frequency);
+        var g = ac.createGain();
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(peak, at + 0.005);
+        g.gain.exponentialRampToValueAtTime(peak * 0.25, at + 1.8);   // decays like a tine
+        g.gain.setTargetAtTime(peak * 0.15, at + 1.8, 1.5);
+        g.gain.cancelScheduledValues(end);
+        g.gain.setTargetAtTime(0.0001, end, rel / 4);
+        car.connect(g); g.connect(dest);
+      });
+    },
+
+    // drawbar organ (16' 8' 4' 2 2/3') with a slow Leslie-ish tremolo
+    organ: function (ac, dest, notes, t, end) {
+      var rel = 0.06, stop = end + rel + 0.02;
+      var g = env(ac, t, 0.008, 0.2 / notes.length, end, rel);
+      var trem = ac.createGain(); trem.gain.value = 1;
+      var lfo = osc(ac, "sine", 5.8, t, stop), depth = ac.createGain();
+      depth.gain.value = 0.12;
+      lfo.connect(depth); depth.connect(trem.gain);
+      g.connect(trem); trem.connect(dest);
+      var bars = [[0.5, 0.6], [1, 1], [2, 0.55], [3, 0.3]];
+      notes.forEach(function (n) {
+        bars.forEach(function (b) {
+          var a = ac.createGain(); a.gain.value = b[1];
+          osc(ac, "sine", hz(n) * b[0], t, stop).connect(a);
+          a.connect(g);
+        });
+      });
+    },
+
+    // strummed: re-strums every beat, down on the beat / up between, brighter accent on
+    // the chord change. The one patch with rhythm, for locking in a groove.
+    pluck: function (ac, dest, notes, t, end, o) {
+      var spb = o.spb || 0.5, hits = Math.max(1, Math.round((end + 0.03 - t) / spb));
+      for (var h = 0; h < hits; h++) {
+        var ht = t + h * spb, hend = Math.min(end, ht + spb - 0.01);
+        var order = h % 2 ? notes.slice().reverse() : notes;
+        var accent = h === 0 ? 1 : 0.7, n = order.length;
+        order.forEach(function (note, i) {
+          var at = ht + i * 0.012, lp = ac.createBiquadFilter();
+          lp.type = "lowpass"; lp.Q.value = 1.5;
+          lp.frequency.setValueAtTime(accent > 0.9 ? 4200 : 3000, at);
+          lp.frequency.exponentialRampToValueAtTime(700, at + 0.25);
+          var g = ac.createGain(), pk = 0.5 * accent / n;
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.exponentialRampToValueAtTime(pk, at + 0.003);
+          g.gain.exponentialRampToValueAtTime(pk * 0.2, at + 0.45);
+          g.gain.setTargetAtTime(0.0001, Math.max(at + 0.01, hend), 0.02);
+          var sv = osc(ac, "sawtooth", hz(note), at, hend + 0.15);
+          var tr = osc(ac, "triangle", hz(note) * 2, at, hend + 0.15);
+          sv.connect(lp); tr.connect(lp); lp.connect(g); g.connect(dest);
+        });
+      }
+    }
+  };
+  var ORDER = ["pad", "keys", "organ", "pluck"];
+  var NAMES = { pad: "Pad", keys: "Keys", organ: "Organ", pluck: "Pluck" };
+
+  // round sine bass with a little pluck, on the root (or the slash note)
+  function bass(ac, dest, midi, t, end) {
+    var g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.45, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.25);
+    g.gain.setValueAtTime(0.25, end);
+    g.gain.exponentialRampToValueAtTime(0.0001, end + 0.08);
+    osc(ac, "sine", hz(midi), t, end + 0.1).connect(g);
+    g.connect(dest);
+  }
+
+  // Play `name` on `ac` into `dest` from time t for dur seconds.
+  // o = { patch: "pad"|"keys"|"organ"|"pluck", spb: seconds per beat }. False if silent.
+  function play(ac, dest, name, t, dur, o) {
+    o = o || {};
     var ch = parse(name);
     if (!ch) return false;
-    var v = voicing(ch), end = t + Math.max(0.12, dur - 0.03), rel = 0.18;
-
-    // pad: two detuned saws per note through a soft lowpass
-    var lp = ac.createBiquadFilter();
-    lp.type = "lowpass"; lp.frequency.value = 1500; lp.Q.value = 0.4;
-    var env = ac.createGain(), peak = 0.32 / v.pad.length;
-    env.gain.setValueAtTime(0.0001, t);
-    env.gain.exponentialRampToValueAtTime(peak, t + 0.04);
-    env.gain.setValueAtTime(peak, end);
-    env.gain.exponentialRampToValueAtTime(0.0001, end + rel);
-    lp.connect(env); env.connect(dest);
-    v.pad.forEach(function (n) {
-      [-7, 7].forEach(function (cents) {
-        var o = ac.createOscillator();
-        o.type = "sawtooth";
-        o.frequency.value = hz(n);
-        o.detune.value = cents;
-        o.connect(lp);
-        o.start(t); o.stop(end + rel + 0.02);
-      });
-    });
-
-    // bass: a round sine with a little pluck
-    var bo = ac.createOscillator(), bg = ac.createGain();
-    bo.type = "sine";
-    bo.frequency.value = hz(v.bass);
-    bg.gain.setValueAtTime(0.0001, t);
-    bg.gain.exponentialRampToValueAtTime(0.45, t + 0.01);
-    bg.gain.exponentialRampToValueAtTime(0.25, t + 0.25);
-    bg.gain.setValueAtTime(0.25, end);
-    bg.gain.exponentialRampToValueAtTime(0.0001, end + 0.08);
-    bo.connect(bg); bg.connect(dest);
-    bo.start(t); bo.stop(end + 0.1);
+    var v = voicing(ch), end = t + Math.max(0.12, dur - 0.03);
+    (PATCHES[o.patch] || PATCHES.pad)(ac, dest, v.pad, t, end, o);
+    bass(ac, dest, v.bass, t, end);
     return true;
   }
 
-  window.Chords = { parse: parse, voicing: voicing, play: play };
+  window.Chords = { parse: parse, voicing: voicing, play: play, patches: ORDER, names: NAMES };
 })();

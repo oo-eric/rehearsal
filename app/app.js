@@ -47,6 +47,7 @@
     tempo: false,
     click: CFG.clickOnStart !== false,
     chords: saved.chords === true,   // play the chart's chords in tempo mode (per device)
+    patch: saved.patch || CFG.chordPatch || "pad",   // chord sound: see Chords.patches
     loop: null,      // { from, to, kind: "section"|"line", label } bars repeated in tempo mode
     ramp: 0,         // speed trainer: + bpm each loop pass, up to the chart tempo
     curBpm: 0,       // bpm of the beat now playing (differs from bpmOf while ramping)
@@ -76,8 +77,9 @@
     $("song-title").textContent = s.title;
     var bpm = nowBpm(), pct = Math.round(bpm / s.bpm * 100);
     $("song-meta").textContent = [s.key, bpm + " bpm" + (bpm !== s.bpm ? " (" + pct + "%)" : "")].filter(Boolean).join(" · ");
-    var sound = [state.click && "click", state.chords && "chords"].filter(Boolean).join(" + ") || "silent";
-    var mode = state.tempo ? "Tempo · " + sound : "Page-turn" + (state.chords ? " · chords" : "");
+    var chordsLabel = state.chords && Chords.names[state.patch].toLowerCase();
+    var sound = [state.click && "click", chordsLabel].filter(Boolean).join(" + ") || "silent";
+    var mode = state.tempo ? "Tempo · " + sound : "Page-turn" + (chordsLabel ? " · " + chordsLabel : "");
     if (state.loop) {
       mode += " · loop " + state.loop.label + (state.tempo && state.pass ? " ×" + (state.pass + 1) : "");
     }
@@ -319,6 +321,18 @@
     renderHeader();
   }
 
+  // Pick a patch (or the next one). Takes effect on the next chord change; turns
+  // chords on, since picking a sound means you want to hear it.
+  function setPatch(p) {
+    var list = Chords.patches;
+    state.patch = p || list[(list.indexOf(state.patch) + 1) % list.length];
+    saved.patch = state.patch;
+    if (!state.chords) { state.chords = true; saved.chords = true; ensureAudio(); }
+    persist();
+    toast("Chords: " + Chords.names[state.patch]);
+    renderHeader();
+  }
+
   function clickAt(t, accent) {
     if (!state.click || !audio) return;
     var o = audio.createOscillator(), g = audio.createGain();
@@ -390,7 +404,7 @@
       var ev = events[schedIdx];
       if (!ev.end && ev.t >= now - LATE && audio) {
         clickAt(audioTimeAt(ev.t), ev.beat === 0);
-        if (state.chords && ev.cb) Chords.play(audio, chordBus(), ev.chord, audioTimeAt(ev.t), ev.cb * 60 / ev.bpm);
+        if (state.chords && ev.cb) Chords.play(audio, chordBus(), ev.chord, audioTimeAt(ev.t), ev.cb * 60 / ev.bpm, { patch: state.patch, spb: 60 / ev.bpm });
         schedUntil = ev.t;
       }
       schedIdx++;
@@ -554,6 +568,7 @@
       if (a[0] === "loop") on = !!state.loop && state.loop.kind === a[1];
       if (a[0] === "ramp") on = state.ramp === +a[1];
       if (a[0] === "sound") on = !!state[a[1]];
+      if (a[0] === "patch") on = state.chords && state.patch === a[1];
       btns[i].classList.toggle("on", on);
     }
   }
@@ -570,6 +585,7 @@
     else if (a[0] === "ramp") setRamp(+a[1]);
     else if (a[0] === "play") Input.fire("play", "pointer");
     else if (a[0] === "sound") Input.fire(a[1], "pointer");
+    else if (a[0] === "patch") setPatch(a[1]);
   });
 
   var toastT = 0;
@@ -666,6 +682,7 @@
       case "play": if (state.tempo) { tempoStop(); render(); } else tempoStart(); share(); break;
       case "click": state.click = !state.click; ensureAudio(); renderHeader(); break;
       case "chords": toggleChords(); break;
+      case "patch": setPatch(); break;
       case "faster": nudgeTempo(1); break;
       case "slower": nudgeTempo(-1); break;
       case "faster5": nudgeTempo(5); break;

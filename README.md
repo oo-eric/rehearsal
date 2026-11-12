@@ -11,7 +11,7 @@ rehearsal/
     index.html
     app.js          navigation, rendering, tempo mode (audio-clock click)
     input.js        input adapters: keyboard, pointer, MIDI -> named actions
-    chords.js       chord symbol -> notes -> pad + bass synth (chord playback)
+    chords.js       chord symbol -> notes -> patch (pad/keys/organ/pluck) + bass (chord playback)
     sync.js         linked screens: clock offsets + messages between devices (native app only)
     config.js       key/pedal/MIDI bindings (the one file a bandmate might edit)
     style.css
@@ -66,11 +66,15 @@ OO-Rehearsal folder, or replace the whole folder.
   is remembered per song (localStorage); the header shows it as a % of the chart.
   Moving outside a loop turns it off.
 - **Chord playback** (`H`, or Sound > Chords in the panel): in tempo mode, plays each
-  chart chord as a soft pad plus a sine bass on the root (or slash bass), on the same
+  chart chord plus a sine bass on the root (or slash bass), on the same
   timeline as the click, so it follows loops, ramps, jumps, and linked screens. It's
   per device and remembered. `chords.js` reads every spelling in the charts (`F#m7(9,11)`,
   `A7(b9)/Eb`, `Gno3(6)`...); N.C. and `(rest)` are silent. Level: `chordVolume` in
-  `config.js`. A guide to play over, not a backing track: no rhythm, one hit per chord.
+  `config.js`. Four patches (`J` cycles, or Chord sound in the panel; remembered per
+  device): **Pad** (soft saws, sustained), **Keys** (FM electric piano, decays),
+  **Organ** (drawbars + tremolo), **Pluck** (strums every beat, down/up: the only one
+  with rhythm). A guide to play over, not a backing track. New patch = one function in
+  `PATCHES` in `chords.js` + its name in `ORDER`/`NAMES` + a panel button.
 
 ## Linked screens (native app)
 

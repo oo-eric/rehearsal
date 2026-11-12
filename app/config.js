@@ -6,6 +6,7 @@
 //   play                     start/stop tempo mode (auto-advance at the song's bpm)
 //   click                    metronome click on/off (tempo mode)
 //   chords                   play the chart's chords (pad + bass) in tempo mode, on/off
+//   patch                    next chord sound: pad, keys, organ, pluck
 //   faster, slower           tempo +/- 1 bpm (remembered per song)
 //   faster5, slower5         tempo +/- 5 bpm
 //   tempoReset               back to the chart's tempo
@@ -32,6 +33,7 @@ window.REHEARSAL_CONFIG = {
     play:        ["p"],
     click:       ["c"],
     chords:      ["h"],
+    patch:       ["j"],
     faster:      ["=", "+"],
     slower:      ["-", "_"],
     faster5:     ["."],
@@ -67,5 +69,6 @@ window.REHEARSAL_CONFIG = {
   // Tempo mode
   countInBars: 1,     // bars of count-in clicks before auto-advance starts
   clickOnStart: true, // metronome click on by default in tempo mode
-  chordVolume: 0.8    // chord playback level (0-1); the click is always on top
+  chordVolume: 0.8,   // chord playback level (0-1); the click is always on top
+  chordPatch: "pad"   // starting chord sound until someone picks one: pad, keys, organ, pluck
 };
