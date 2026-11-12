@@ -1,15 +1,16 @@
-# native/: Mac + iPad app
+# native/: the Mac + iPad + iPhone app
 
-A native shell around the rehearsal display in `../app/`. The display itself is the
-same HTML/JS (one codebase, so a fix lands everywhere). The native part adds the things
-a browser can't do:
+The rehearsal display, in Swift: SwiftUI for the screen, AVAudioEngine for the click,
+chords and bass, CoreMIDI for pedals, MultipeerConnectivity for linked screens. One
+codebase (`Shared/`) builds for macOS 12+ and iOS 15+. It used to wrap the web version
+(`../app/`) in a WKWebView; it doesn't anymore. The web version still runs in a browser.
 
-| | Web (`app/index.html` in Safari) | This app |
+| | Web (`app/index.html` in a browser) | This app |
 |---|---|---|
 | MIDI foot pedals | Chrome only | **Built in** (CoreMIDI: USB, Bluetooth MIDI, network) |
 | Screen stays on | `caffeinate` / System Settings | **Automatic** (Mac and iPad) |
 | Click track with the iPad silent switch on | muted | **Plays** |
-| Bluetooth page-turner pedals on iPhone/iPad | only when the page has keyboard focus | **Always** (caught natively) |
+| Bluetooth page-turner pedals on iPhone/iPad | only with keyboard focus | **Always** (caught app-wide) |
 | Tap the screen to turn pages | yes | yes |
 | Update songs without rebuilding | swap `songs.js` | drop `songs.js` in the app's songs folder |
 | Icon in the Dock / home screen | no | yes |
@@ -26,8 +27,9 @@ Set by what current Xcode (27) can still target:
   iPhone works too.
 
 Older than that needs an older Xcode, or just use the web version in Safari.
-**Tested** on macOS 27 (Apple silicon) and the iOS 27 iPad simulator only. Not yet run on
-real old hardware, so the first band-computer launch is the real test.
+**Tested** (Swift build) on macOS 27 (Apple silicon) and the iOS 27 iPhone and iPad
+simulators. Not yet run on a real device or old hardware, so the first band-computer
+launch is the real test.
 
 ## Build
 
@@ -35,9 +37,12 @@ real old hardware, so the first band-computer launch is the real test.
 python3 ../build.py     # songs.js from the charts (gets bundled into the app)
 ./build.sh              # Mac app -> ../dist/OO-Rehearsal-mac.zip
 ./build.sh ios          # iPad compile check
+./build-cli.sh          # Mac app with Command Line Tools only (no Xcode)
+./Tests/run.sh          # command-line tests: chords, synth, timeline, linked screens
 ```
 
-Needs Xcode and `xcodegen` (`brew install xcodegen`). `project.yml` is the source;
+Needs Xcode and `xcodegen` (`brew install xcodegen`), except `build-cli.sh` and the
+tests, which need only Command Line Tools. `project.yml` is the source;
 the `.xcodeproj` is generated and gitignored. To work in Xcode: `xcodegen`, then
 open `OORehearsal.xcodeproj`.
 
@@ -59,7 +64,8 @@ no-cable route (needs an App Store Connect app record first).
 - **iPad:** Files app > On My iPad > **OO Rehearsal**, drop in `songs.js`, relaunch the app.
 
 A `songs.js` there wins over the one built into the app. The pedal-setup panel (K)
-says which one loaded.
+says which one loaded. The app reads the JSON inside `songs.js` directly
+(`Song.swift`), so it's the same file the web version and `build.py` use.
 
 ## Touch (iPad with no keyboard)
 
@@ -69,22 +75,46 @@ close it.
 
 ## How it fits together
 
-- `Shared/Stage.swift`: the WKWebView, the JS bridge (`webkit.messageHandlers.rehearsal`)
-- `Shared/MIDIInput.swift`: CoreMIDI in. Raw messages go to JS `Input.fromNative()`,
-  so the `midi` rules in `app/config.js` decide what a pedal does, same as Chrome.
-- `Shared/PeerLink.swift`: MultipeerConnectivity session that links nearby copies of the
-  app and relays JSON to `Sync.fromNative()` (`app/sync.js`). JS cmd `sync` sends.
-  Needs `NSLocalNetworkUsageDescription` + `NSBonjourServices` (`_oo-rehearsal._tcp/_udp`)
-  in `project.yml`, or discovery silently finds nobody.
-- `Shared/WebRoot.swift`: copies `app/` to Caches and swaps in a user `songs.js`
-- `iOS/AppDelegate.swift`: scene lifecycle, full screen, idle timer off, audio session `.playback`
+```text
+MIDIInput (CoreMIDI) --bytes-------> Rehearsal.midi  \
+iOS KeyInput / Mac key monitor ----> Rehearsal.key    > Action -> Rehearsal.fire
+taps on the page area -------------> Rehearsal.pointer/
+PeerLink (Multipeer) <--JSON--> Sync <--snapshots--> Rehearsal
+Rehearsal --beats, ~150 ms ahead--> Synth (AVAudioEngine)
+Rehearsal --@Published--> StageView / Panels (SwiftUI)
+```
+
+- `Shared/Rehearsal.swift`: the model. Navigation, page mode, the beat timeline (a run
+  = fromBar + t0 + bpm + count-in + loop; every beat follows from it), tempo/loop/speed
+  trainer, sounds, the song picker and setup panel state, linked-screen snapshots.
+- `Shared/StageView.swift`, `Shared/Panels.swift`, `Shared/Theme.swift`: the screen.
+  Sizes are fractions of the screen (vh/vw, like the CSS was), so one layout reads on a
+  TV, an iPad and a phone.
+- `Shared/Synth.swift`: `SynthCore` renders the click, the four chord patches and the
+  bass from a fixed pool of voices, sample by sample; `Synth` puts it on AVAudioEngine.
+  Each buffer records when it will be heard (host time + output latency), and beats
+  are scheduled in `HostClock` ms, so a beat lands on its sample.
+- `Shared/ChordTheory.swift`: chord symbol -> notes. `Tests/chords-ref.json` pins it to
+  the old JS parser's answers for every chord in the charts.
+- `Shared/Sync.swift`: clock offsets (NTP-style pings) and message plumbing.
+  `Shared/PeerLink.swift`: MultipeerConnectivity session that carries the JSON. Needs
+  `NSLocalNetworkUsageDescription` + `NSBonjourServices` (`_oo-rehearsal._tcp/_udp`) in
+  `project.yml`, or discovery silently finds nobody.
+- `Shared/Config.swift`: key, pedal and MIDI bindings; count-in, chord volume.
+- `Shared/Song.swift`: reads `songs.js`, flattens sections -> rows -> bars.
+- `Shared/AppCore.swift`: builds the pieces and wires them together.
+- `iOS/AppDelegate.swift`: scene lifecycle, full screen, idle timer off, audio session
+  `.playback` (so the silent switch doesn't mute the click).
 - `iOS/KeyInput.swift` + `iOS/main.swift`: a `UIApplication` subclass that catches every
-  hardware key (Bluetooth page-turner pedals, keyboards) and hands it to JS
-  `Input.fromNativeKey()`, so the `keys` rules in `app/config.js` apply. WKWebView alone
-  only delivers keys while its hidden content view has focus, so pedals did nothing.
-- Notch / Dynamic Island / rounded corners: `viewport-fit=cover` in `app/index.html` plus
-  `env(safe-area-inset-*)` padding in `app/style.css` (zero everywhere else).
-- `macOS/AppDelegate.swift`: window, menus, display-sleep assertion
+  hardware key (Bluetooth page-turner pedals, keyboards) app-wide.
+- `macOS/AppDelegate.swift`: window, menus, key monitor, display-sleep assertion.
+- Debug builds only: the Mac app takes test commands over a distributed notification
+  (`oo.rehearsal.test`: `key:`, `tap:`, `snap:<png>`, `size:`, `audio:`), and the iOS
+  app takes `-ooKeys "Enter,],p"` at launch, so a script can drive it and screenshot it.
+
+Gotcha: on the 27 SDKs SwiftUI's `@State` is a macro whose compiler plugin ships only
+with full Xcode, so `build-cli.sh` (Command Line Tools) can't compile it. Use
+`@StateObject` / `@ObservedObject` instead.
 
 Gotcha: `xcodebuild` with no `-destination` builds **only this Mac's architecture**
 even with `ARCHS = arm64 x86_64`. `build.sh` passes `generic/platform=macOS` and
@@ -93,7 +123,8 @@ fails if the Intel slice is missing. Don't "simplify" that away.
 Note: MultipeerConnectivity is marked deprecated in the macOS/iOS 27 SDKs ("use Network
 framework"). It still builds and runs, and it's the only option that works the same back
 to Monterey / iPadOS 15. If it ever stops working, rewrite `PeerLink.swift` on
-`NWListener` + `NWBrowser` (Bonjour, `includePeerToPeer`). The JS side won't change.
+`NWListener` + `NWBrowser` (Bonjour, `includePeerToPeer`) behind the same
+`PeerTransport` protocol. `Sync` won't change.
 
 Gotcha: iOS 27 kills apps at launch that haven't adopted the UIScene lifecycle
 (`UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption` in the crash log).

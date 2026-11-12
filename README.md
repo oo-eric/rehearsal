@@ -1,30 +1,34 @@
 # rehearsal/: rehearsal display (chords + sections + lyrics on a screen)
 
-An offline, no-install web app for the band computer (an **Intel Mac**). It shows the
-current section, a row of bars with chords, and the lyric line, sized to read from
-across the room on a TV or monitor, so nobody has to squint at paper charts.
+A native Mac / iPad / iPhone app for the band computer (an **Intel Mac**) and everyone's
+tablets. It shows the current section, a row of bars with chords, and the lyric line,
+sized to read from across the room on a TV or monitor, so nobody has to squint at
+paper charts. Nearby copies link up and stay on the same song and beat.
 
 ```text
 rehearsal/
   build.py          lead.md -> app/songs.js (and --zip -> dist/OO-Rehearsal.zip)
-  app/              THE APP: copy this folder to any Mac, open index.html
-    index.html
-    app.js          navigation, rendering, tempo mode (audio-clock click)
-    input.js        input adapters: keyboard, pointer, MIDI -> named actions
-    chords.js       chord symbol -> notes -> patch (pad/keys/organ/pluck) and/or bass (playback)
-    sync.js         linked screens: clock offsets + messages between devices (native app only)
-    config.js       key/pedal/MIDI bindings (the one file a bandmate might edit)
-    style.css
+  native/           THE APP: SwiftUI, one codebase for Mac + iPad + iPhone. See native/README.md
+    Shared/
+      Rehearsal.swift   navigation, page mode, tempo timeline, practice tools, sync state
+      StageView.swift   the screen (header, song map, rows, next); Panels.swift: overlays
+      Synth.swift       click + chord patches + bass, rendered on AVAudioEngine
+      ChordTheory.swift chord symbol -> notes
+      Sync.swift        linked screens: clock offsets + messages; PeerLink.swift: the wire
+      Config.swift      key/pedal/MIDI bindings (the file a bandmate might edit)
+      Song.swift        reads songs.js; AppCore.swift wires it all together
+    Tests/          command-line tests: chords, synth, timeline, sync (./Tests/run.sh)
+  app/              the old web version (browser fallback) + where songs.js lives
     songs.js        GENERATED from the charts. Gitignored: the lyrics stay private.
     songs.example.js  demo song, so a fresh clone runs. songs.js overrides it.
     HOW TO USE.txt  the card for whoever is at the band computer
-  native/           Mac + iPad app wrapping app/ (CoreMIDI pedals, screen-on). See native/README.md
   dist/             build output (gitignored)
 ```
 
-Plain classic scripts, with no modules, framework, or build step for the app itself.
-This is deliberate: it has to run from `file://` in whatever Safari the Intel Mac has.
-Tested in Chrome and WebKit 18 (Safari's engine) at 1920×1080 and 1280×720.
+The app used to be a web page in a WKWebView. It is now native Swift end to end
+(SwiftUI views, AVAudioEngine synth, CoreMIDI, MultipeerConnectivity), on macOS 12+ and
+iOS 15+. `app/` still runs in a browser as a fallback, but new features land in Swift
+first; see [The web version](#the-web-version).
 
 ## Where the songs come from
 
@@ -50,35 +54,39 @@ python3 build.py --songs ~/charts   # charts somewhere other than ../songs
 `build.py` prints chart warnings (bar counts that don't match the section heading,
 gaps between sections). The current list lives in the band repo's `songs/README.md`.
 
-To update the band computer after a chart change, replace `songs.js` in its
-OO-Rehearsal folder, or replace the whole folder.
+The app reads `songs.js` as is (the JSON inside it), so the file the band passes around
+didn't change. To update charts without rebuilding the app, drop a new `songs.js` into
+the app's songs folder (Mac: View > Show Songs Folder, then ⌘R; iPad/iPhone: Files app >
+On My iPad > OO Rehearsal, then relaunch). A rebuilt app bundles whatever is in
+`app/songs.js`.
 
 ## Modes
 
 - **Page-turn** (default): one row (phrase) per press. Follows the band.
 - **Tempo** (`P`): 1-bar count-in, then auto-advances bar by bar at the song's bpm,
-  with an optional Web Audio click scheduled on the audio clock (not timers), so it
-  stays steady.
+  with an optional click placed on an exact audio sample (not a timer), so it stays
+  steady.
 - **Tempo & practice** (`B`, or tap the bpm in the header): ±1/±5 bpm, 50–100% of the
   chart tempo, tap tempo (`T`), reset (`0`), loop this section (`O`) or this line, and a
   speed trainer that adds 1/2/5 bpm each loop pass up to the chart tempo. Changes made
   while playing land on the next downbeat, so the groove doesn't stumble. The set tempo
-  is remembered per song (localStorage); the header shows it as a % of the chart.
+  is remembered per song on each device; the header shows it as a % of the chart.
   Moving outside a loop turns it off.
 - **Chord playback** (`H`, or Sound > Chords in the panel): in tempo mode, plays each
   chart chord, on the same
   timeline as the click, so it follows loops, ramps, jumps, and linked screens. It's
-  per device and remembered. `chords.js` reads every spelling in the charts (`F#m7(9,11)`,
+  per device and remembered. `ChordTheory.swift` reads every spelling in the charts (`F#m7(9,11)`,
   `A7(b9)/Eb`, `Gno3(6)`...); N.C. and `(rest)` are silent. Level: `chordVolume` in
-  `config.js`. **Bass** (`N`, or Sound > Bass) is its own toggle: a round sine on the
+  `Config.swift`. **Bass** (`N`, or Sound > Bass) is its own toggle: a round sine on the
   root (or slash note), with a little 2nd/3rd harmonic so it reads on iPad and phone
   speakers. Play it alone with the click, or under the chords. Four patches (`J` cycles, or Chord sound in the panel; remembered per
   device): **Pad** (soft saws, sustained), **Keys** (FM electric piano, decays),
   **Organ** (drawbars + tremolo), **Pluck** (strums every beat, down/up: the only one
-  with rhythm). A guide to play over, not a backing track. New patch = one function in
-  `PATCHES` in `chords.js` + its name in `ORDER`/`NAMES` + a panel button.
+  with rhythm). A guide to play over, not a backing track. New patch = a voice builder in
+  `SynthCore` (`Synth.swift`), a case in `play(chord:)`, and its name in
+  `patches`/`patchNames` (the panel and `J` pick it up from there).
 
-## Linked screens (native app)
+## Linked screens
 
 Every copy of the native app nearby (Mac, iPad, iPhone) links up automatically and follows
 whoever touched a control last: song, row, play/stop, jumps, and tempo nudges. The click
@@ -88,12 +96,14 @@ to take one screen solo, then again to rejoin, which also makes that screen the 
 - **Transport:** MultipeerConnectivity (`native/Shared/PeerLink.swift`). Works over Wi-Fi,
   peer-to-peer Wi-Fi, or Bluetooth, with no router or internet. First launch asks for
   Local Network permission; say yes.
-- **Timing:** `sync.js` pings each peer every second and keeps the clock offset from the
-  fastest round trip. A play/jump goes out as "bar X starts at T on my clock", and each
-  device converts T to its own clock and re-anchors as clocks drift. Clicks are placed
-  with `AudioContext.getOutputTimestamp()`, so speaker latency differences cancel.
-  In a simulated test (two WebKit pages, 4 ms + jitter each way) starts landed within
-  ±5 ms of each other. Not yet measured on real devices on a real network.
+- **Timing:** `Sync.swift` pings each peer every second and keeps the clock offset from
+  the fastest round trip. A play/jump goes out as "bar X starts at T on my clock", and
+  each device converts T to its own clock and re-anchors as clocks drift. Each audio
+  buffer knows when it will be heard (host time + output latency), so speaker latency
+  differences cancel. In the simulated test (`native/Tests`, 4 ms + jitter each way,
+  10% of pings lost) starts land within ±3 ms. Not yet measured on real devices.
+- **Mixed builds:** the messages are byte-for-byte the web-view build's, so a device
+  still on the old build links with the Swift one.
 - A device joining mid-song picks up the running song on the next beat.
 - Charts must match: a device that lacks the song, or has a different bar count, says
   so in the pedal-setup panel (K).
@@ -120,8 +130,9 @@ yanking the tempo, and the last three readings are averaged.
 ## Input: built for a foot pedal we don't own yet
 
 Every input becomes a named **action** (`next`, `prev`, `nextSection`, `play`...).
-Bindings live in `app/config.js`; adding a new input device means adding an adapter in
-`input.js` that calls `Input.fire(action)`.
+Bindings live in `native/Shared/Config.swift` (key names are the web's `KeyboardEvent.key`
+names, so old `config.js` lists carry over). A new input device = something that calls
+`Rehearsal.fire(action)` (or `key(...)` / `midi(...)` to show up in the setup panel).
 
 - **Today:** keyboard, a wireless mouse (right ⅔ of the screen = next, left ⅓ = back), or
   any wireless presentation clicker (they send PageUp/PageDown, already bound).
@@ -130,11 +141,10 @@ Bindings live in `app/config.js`; adding a new input device means adding an adap
   **Already bound, no code needed.** Prefer a 2-button model (next + back). A
   3–4-button one can map the extras to `nextSection` / `play`.
 - **Pedal setup panel** (`K`): shows every key/click/MIDI message and the action it
-  maps to. That's how to find what an unknown pedal sends, then add it to `config.js`.
-- **MIDI footswitches**: an adapter is written (`cc` / `note` / `pc` rules in
-  `config.js`), but it's **untested without hardware** and **Chrome-only** (Safari has
-  no Web MIDI). Enabled from the setup panel (`M`) because Chrome asks permission.
-  If the band goes MIDI, run the app in Chrome on the band computer.
+  maps to. That's how to find what an unknown pedal sends, then add it to `Config.swift`.
+- **MIDI footswitches**: always on (CoreMIDI: USB, Bluetooth MIDI, network). `cc` /
+  `note` / `pc` rules in `Config.swift`. **Untested without hardware.** `M` in the
+  setup panel lists connected MIDI devices.
 
 ## Roadmap / not built yet
 
@@ -146,5 +156,12 @@ Bindings live in `app/config.js`; adding a new input device means adding an adap
 - **Setlists**: an ordered list of songs, where "next" at the end of a song moves to the next song.
 - **Per-instrument views**: bass.md / drums.md exist for some songs. A `V` toggle
   could swap the chord grid for bass notes or drum cues.
-- **Linked screens in plain browsers**: native apps link (above); two browser windows
-  don't. Would need a tiny local server or BroadcastChannel (same browser only).
+- **Retire the web version** once the Swift app has a rehearsal or two behind it.
+
+## The web version
+
+`app/` is the original browser app (classic scripts, runs from `file://`, Chrome or
+Safari). It still works and still reads the same `songs.js`, but it is frozen at the
+feature set of the Swift port (tempo, practice, page mode, chords + bass, solo only:
+no linked screens in a browser). Open `app/index.html`, or `build.py --zip` for a
+folder to copy to any Mac. Its own key bindings are in `app/config.js`.

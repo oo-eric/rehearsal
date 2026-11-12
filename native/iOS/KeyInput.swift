@@ -1,8 +1,8 @@
 import UIKit
 
 /// Catches every hardware key press app-wide and hands it to `onKey` as a web-style
-/// key name ("ArrowRight", "PageDown", " ", "p", "Shift+ArrowLeft"), so config.js
-/// bindings work no matter what has focus. Cmd/Ctrl/Option combos pass through.
+/// key name ("ArrowRight", "PageDown", " ", "p", "Shift+ArrowLeft"), so the
+/// Config.swift bindings work no matter what has focus. Cmd/Ctrl/Option combos pass through.
 final class RehearsalApplication: UIApplication {
     static var onKey: ((_ name: String, _ detail: String) -> Void)?
 

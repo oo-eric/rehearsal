@@ -1,6 +1,6 @@
 import AVFoundation
+import SwiftUI
 import UIKit
-import WebKit
 
 final class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication,
@@ -27,15 +27,31 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
+    private var core: AppCore?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
                options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
+        let core = AppCore()
+        self.core = core
         let window = UIWindow(windowScene: windowScene)
         window.backgroundColor = .black
-        window.rootViewController = StageViewController()
+        window.rootViewController = StageController(rootView: StageView(model: core.model))
         window.makeKeyAndVisible()
         self.window = window
+        // Hardware keys (Bluetooth page-turner pedals, keyboards) are caught app-wide.
+        RehearsalApplication.onKey = { [weak core] name, detail in core?.model.key(name, detail: detail) }
+        #if DEBUG
+        // Tests: `simctl launch <device> <bundle id> -ooKeys "Enter,],ArrowRight,p"` presses
+        // those keys a beat apart after launch.
+        if let i = CommandLine.arguments.firstIndex(of: "-ooKeys"), i + 1 < CommandLine.arguments.count {
+            for (n, k) in CommandLine.arguments[i + 1].split(separator: ",").enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1 + Double(n) * 0.4) { [weak core] in
+                    core?.model.key(String(k), detail: "test")
+                }
+            }
+        }
+        #endif
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
@@ -43,25 +59,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 }
 
-final class StageViewController: UIViewController {
-    private let stage = Stage()
-
-    override func loadView() {
-        view = stage.webView
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        stage.load()
-        RehearsalApplication.onKey = { [weak self] name, detail in self?.stage.sendKey(name, detail: detail) }
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        // Hardware keyboards, page-turner pedals and clickers send keys to the first responder.
-        stage.webView.becomeFirstResponder()
-    }
-
+/// Full screen, no status bar, home indicator tucked away.
+final class StageController: UIHostingController<StageView> {
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
+    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .all }
 }

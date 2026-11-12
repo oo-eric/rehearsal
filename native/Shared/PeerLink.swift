@@ -5,15 +5,15 @@ import UIKit
 #endif
 
 /// Links every OO Rehearsal app nearby (Mac, iPad, iPhone) into one session and relays
-/// JSON between their web displays. The sync logic (clock offsets, who leads, the beat
-/// timeline) lives in JS (app/sync.js + app/app.js); this is only the wire.
+/// JSON between them. The sync logic (clock offsets, who leads, the beat timeline)
+/// lives in Sync.swift and Rehearsal.swift; this is only the wire.
 ///
 /// MultipeerConnectivity finds peers over Wi-Fi, peer-to-peer Wi-Fi, and Bluetooth, so
 /// it works in a rehearsal room with no router and no internet. Every app both
 /// advertises and browses; of any two, the one with the smaller peer name sends the
 /// invitation, so they never invite each other at once. Invitations are accepted
 /// without asking: anything running this app nearby is the band.
-final class PeerLink: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDelegate {
+final class PeerLink: NSObject, PeerTransport, MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDelegate {
     /// `_oo-rehearsal._tcp` / `._udp` must be listed under NSBonjourServices in Info.plist.
     static let serviceType = "oo-rehearsal"
     private static let protocolVersion = "1"

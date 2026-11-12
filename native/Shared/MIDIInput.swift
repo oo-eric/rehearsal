@@ -2,8 +2,8 @@ import CoreMIDI
 import Foundation
 
 /// Listens to every connected MIDI source (USB, Bluetooth MIDI, network) and hands
-/// channel messages to `onMessage`. What a message *does* is decided in JS by the
-/// `midi` rules in app/config.js, the same rules Chrome's Web MIDI path uses.
+/// channel messages to `onMessage`. What a message *does* is decided by the `midi` rules
+/// in Config.swift.
 ///
 /// Uses the MIDIPacketList API (macOS 10.11 / iOS 9) rather than the newer event-list
 /// one so it builds for old OS targets.

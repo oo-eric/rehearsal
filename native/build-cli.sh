@@ -70,11 +70,13 @@ cp "$SRC/mac-512.png"  "$ICONSET/icon_512x512.png"
 cp "$SRC/icon-1024.png" "$ICONSET/icon_512x512@2x.png"
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
-# --- the web display, bundled as Resources/app (what WebRoot.prepare copies) -
-ditto --norsrc --noextattr --noacl ../app "$APP/Contents/Resources/app"
-rm -f "$APP/Contents/Resources/app/.DS_Store"
-[[ -f "$APP/Contents/Resources/app/songs.js" ]] \
-  || echo "note: no app/songs.js -- the app will show the example songs. Run: python3 ../build.py"
+# --- the charts: songs.js (built by build.py) and the demo song, as plain resources ---
+cp ../app/songs.example.js "$APP/Contents/Resources/"
+if [[ -f ../app/songs.js ]]; then
+  cp ../app/songs.js "$APP/Contents/Resources/"
+else
+  echo "note: no app/songs.js -- the app will show the demo song. Run: python3 ../build.py"
+fi
 
 # --- ad-hoc sign: copy to any Mac, right-click > Open once ------------------
 codesign --force --sign - --timestamp=none "$APP"
