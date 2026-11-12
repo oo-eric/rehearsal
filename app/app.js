@@ -47,6 +47,7 @@
     tempo: false,
     click: CFG.clickOnStart !== false,
     chords: saved.chords === true,   // play the chart's chords in tempo mode (per device)
+    bass: saved.bass != null ? saved.bass : saved.chords === true,   // bass on the root/slash note
     patch: saved.patch || CFG.chordPatch || "pad",   // chord sound: see Chords.patches
     loop: null,      // { from, to, kind: "section"|"line", label } bars repeated in tempo mode
     ramp: 0,         // speed trainer: + bpm each loop pass, up to the chart tempo
@@ -79,7 +80,8 @@
     $("song-title").textContent = s.title;
     var bpm = nowBpm(), pct = Math.round(bpm / s.bpm * 100);
     $("song-meta").textContent = [s.key, bpm + " bpm" + (bpm !== s.bpm ? " (" + pct + "%)" : "")].filter(Boolean).join(" · ");
-    var chordsLabel = state.chords && Chords.names[state.patch].toLowerCase();
+    var chordsLabel = [state.chords && Chords.names[state.patch].toLowerCase(), state.bass && "bass"]
+      .filter(Boolean).join(" + ");
     var sound = [state.click && "click", chordsLabel].filter(Boolean).join(" + ") || "silent";
     var mode = state.page ? "Page · " + sound + (turnEst.length ? " · pedal tempo" : "")
       : state.tempo ? "Tempo · " + sound
@@ -419,6 +421,17 @@
     renderHeader();
   }
 
+  // Bass is its own sound: on with the chords for the full guide, or alone (with the
+  // click) to lock in with the drummer without a pad covering the guitars.
+  function toggleBass() {
+    state.bass = !state.bass;
+    saved.bass = state.bass;
+    persist();
+    if (state.bass) ensureAudio(); else if (audio) silenceChords();
+    toast(state.bass ? "Bass on" + (state.tempo ? "" : " (it plays in tempo mode, P)") : "Bass off");
+    renderHeader();
+  }
+
   // Pick a patch (or the next one). Takes effect on the next chord change; turns
   // chords on, since picking a sound means you want to hear it.
   function setPatch(p) {
@@ -502,7 +515,10 @@
       var ev = events[schedIdx];
       if (!ev.end && ev.t >= now - LATE && audio) {
         clickAt(audioTimeAt(ev.t), ev.beat === 0);
-        if (state.chords && ev.cb) Chords.play(audio, chordBus(), ev.chord, audioTimeAt(ev.t), ev.cb * 60 / ev.bpm, { patch: state.patch, spb: 60 / ev.bpm });
+        if ((state.chords || state.bass) && ev.cb) {
+          Chords.play(audio, chordBus(), ev.chord, audioTimeAt(ev.t), ev.cb * 60 / ev.bpm,
+            { patch: state.patch, spb: 60 / ev.bpm, chords: state.chords, bass: state.bass });
+        }
         schedUntil = ev.t;
       }
       schedIdx++;
@@ -788,6 +804,7 @@
       case "click": state.click = !state.click; ensureAudio(); renderHeader(); break;
       case "chords": toggleChords(); break;
       case "patch": setPatch(); break;
+      case "bass": toggleBass(); break;
       case "faster": nudgeTempo(1); break;
       case "slower": nudgeTempo(-1); break;
       case "faster5": nudgeTempo(5); break;

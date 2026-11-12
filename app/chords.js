@@ -1,4 +1,4 @@
-// Chord playback: chord symbol -> notes -> a patch (pad, keys, organ, pluck) + bass,
+// Chord playback: chord symbol -> notes -> a patch (pad, keys, organ, pluck) and/or bass,
 // on the Web Audio clock.
 // Classic script (no modules). app.js calls Chords.play() from the tempo scheduler, so
 // chords land on the same beat timeline as the click (and on linked screens).
@@ -190,27 +190,36 @@
   var ORDER = ["pad", "keys", "organ", "pluck"];
   var NAMES = { pad: "Pad", keys: "Keys", organ: "Organ", pluck: "Pluck" };
 
-  // round sine bass with a little pluck, on the root (or the slash note)
+  // Round bass on the root (or the slash note), with a little pluck. Sine fundamental
+  // plus a quiet 2nd and 3rd harmonic: C2-B2 is below what phone and iPad speakers
+  // reproduce, and the harmonics let the ear hear the note anyway.
+  var BASS_PARTIALS = [[1, 1], [2, 0.35], [3, 0.12]];
   function bass(ac, dest, midi, t, end) {
     var g = ac.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.45, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.25, t + 0.25);
-    g.gain.setValueAtTime(0.25, end);
+    g.gain.exponentialRampToValueAtTime(0.4, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.25);
+    g.gain.setValueAtTime(0.22, end);
     g.gain.exponentialRampToValueAtTime(0.0001, end + 0.08);
-    osc(ac, "sine", hz(midi), t, end + 0.1).connect(g);
+    BASS_PARTIALS.forEach(function (p) {
+      var a = ac.createGain();
+      a.gain.value = p[1];
+      osc(ac, "sine", hz(midi) * p[0], t, end + 0.1).connect(a);
+      a.connect(g);
+    });
     g.connect(dest);
   }
 
   // Play `name` on `ac` into `dest` from time t for dur seconds.
-  // o = { patch: "pad"|"keys"|"organ"|"pluck", spb: seconds per beat }. False if silent.
+  // o = { patch: "pad"|"keys"|"organ"|"pluck", spb: seconds per beat,
+  //       chords: false to skip the patch, bass: false to skip the bass }. False if silent.
   function play(ac, dest, name, t, dur, o) {
     o = o || {};
     var ch = parse(name);
-    if (!ch) return false;
+    if (!ch || (o.chords === false && o.bass === false)) return false;
     var v = voicing(ch), end = t + Math.max(0.12, dur - 0.03);
-    (PATCHES[o.patch] || PATCHES.pad)(ac, dest, v.pad, t, end, o);
-    bass(ac, dest, v.bass, t, end);
+    if (o.chords !== false) (PATCHES[o.patch] || PATCHES.pad)(ac, dest, v.pad, t, end, o);
+    if (o.bass !== false) bass(ac, dest, v.bass, t, end);
     return true;
   }
 

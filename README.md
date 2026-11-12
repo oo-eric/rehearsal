@@ -11,7 +11,7 @@ rehearsal/
     index.html
     app.js          navigation, rendering, tempo mode (audio-clock click)
     input.js        input adapters: keyboard, pointer, MIDI -> named actions
-    chords.js       chord symbol -> notes -> patch (pad/keys/organ/pluck) + bass (chord playback)
+    chords.js       chord symbol -> notes -> patch (pad/keys/organ/pluck) and/or bass (playback)
     sync.js         linked screens: clock offsets + messages between devices (native app only)
     config.js       key/pedal/MIDI bindings (the one file a bandmate might edit)
     style.css
@@ -66,11 +66,13 @@ OO-Rehearsal folder, or replace the whole folder.
   is remembered per song (localStorage); the header shows it as a % of the chart.
   Moving outside a loop turns it off.
 - **Chord playback** (`H`, or Sound > Chords in the panel): in tempo mode, plays each
-  chart chord plus a sine bass on the root (or slash bass), on the same
+  chart chord, on the same
   timeline as the click, so it follows loops, ramps, jumps, and linked screens. It's
   per device and remembered. `chords.js` reads every spelling in the charts (`F#m7(9,11)`,
   `A7(b9)/Eb`, `Gno3(6)`...); N.C. and `(rest)` are silent. Level: `chordVolume` in
-  `config.js`. Four patches (`J` cycles, or Chord sound in the panel; remembered per
+  `config.js`. **Bass** (`N`, or Sound > Bass) is its own toggle: a round sine on the
+  root (or slash note), with a little 2nd/3rd harmonic so it reads on iPad and phone
+  speakers. Play it alone with the click, or under the chords. Four patches (`J` cycles, or Chord sound in the panel; remembered per
   device): **Pad** (soft saws, sustained), **Keys** (FM electric piano, decays),
   **Organ** (drawbars + tremolo), **Pluck** (strums every beat, down/up: the only one
   with rhythm). A guide to play over, not a backing track. New patch = one function in

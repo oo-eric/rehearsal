@@ -5,7 +5,8 @@
 //   restart                  back to bar 1
 //   play                     start/stop tempo mode (auto-advance at the song's bpm)
 //   click                    metronome click on/off (tempo mode)
-//   chords                   play the chart's chords (pad + bass) in tempo mode, on/off
+//   chords                   play the chart's chords in tempo mode, on/off
+//   bass                     play a bass note on each chord's root (or slash note), on/off
 //   patch                    next chord sound: pad, keys, organ, pluck
 //   faster, slower           tempo +/- 1 bpm (remembered per song)
 //   faster5, slower5         tempo +/- 5 bpm
@@ -36,6 +37,7 @@ window.REHEARSAL_CONFIG = {
     click:       ["c"],
     chords:      ["h"],
     patch:       ["j"],
+    bass:        ["n"],
     faster:      ["=", "+"],
     slower:      ["-", "_"],
     faster5:     ["."],
