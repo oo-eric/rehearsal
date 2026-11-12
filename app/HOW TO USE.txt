@@ -52,7 +52,9 @@ light up by themselves, and the display works out the tempo from how
 long you took over the last page - so it follows the band, not the chart.
 
   G ................ page mode on/off
-  pedal / arrows ... turn the whole page (back goes a page too)
+  pedal / arrows ... turn the whole page
+  back ............. first press goes back to the top of the page you are
+                     on; press it again to leave for the page before
 
 The screen holds still between presses: it never turns early on its own,
 even if it thinks the page should be over. If you pause between songs the

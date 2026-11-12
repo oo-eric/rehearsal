@@ -105,6 +105,10 @@ many bars of music, so dividing that interval by the beats on the page is a far 
 reading than tapping a beat, and it tracks what the band is actually playing rather than
 what the chart says. It drives the click and chord playback too.
 
+Back is two-stage, the same shape as `prevSection`: the first press returns to the top
+of the page you are on, and only a second press leaves for the page before. A fumbled
+page costs one press instead of your place.
+
 The page never turns on its own. If the measured tempo runs past the end of the page the
 highlight parks on the last line and waits -- a page turned early loses everyone's place,
 which is worse than a highlight that sits still. Intervals that imply under 40 or over

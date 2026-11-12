@@ -304,6 +304,9 @@
       goRow(pr[1] + 1);                       // first row after this page; goRow clamps
     } else {
       turnEst = [];                           // going back is not a tempo measurement
+      // Back from mid-page restarts this page; back again leaves it. Same shape as
+      // prevSection, and it means a fumbled page costs one press, not a lost place.
+      if (state.row > pr[0]) { goRow(pr[0]); return; }
       if (pr[0] === 0) { goRow(0); }
       else {
         var prev = s._rows[pr[0] - 1];        // land on the start of the page before
