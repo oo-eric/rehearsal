@@ -45,6 +45,22 @@ TEMPO MODE (play along at the song's tempo)
                      comes round, until you're back at full tempo
   Arrows / ] [ ..... jump while it runs; it keeps time from the new spot
 
+PAGE MODE (G) - one pedal press per page
+--------------------------------------------------------------------
+Instead of stepping once per line, step once per SCREEN. The lines then
+light up by themselves, and the display works out the tempo from how
+long you took over the last page - so it follows the band, not the chart.
+
+  G ................ page mode on/off
+  pedal / arrows ... turn the whole page (back goes a page too)
+
+The screen holds still between presses: it never turns early on its own,
+even if it thinks the page should be over. If you pause between songs the
+tempo is left alone rather than being thrown off by the gap.
+The header says PAGE, and PEDAL TEMPO once it has measured one.
+0 puts the tempo back to the chart.
+
+
 LINKED SCREENS (Mac/iPad/iPhone app only)
 -----------------------------------------
 Every OO Rehearsal app nearby links up by itself (top right says LINKED · 3).

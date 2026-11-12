@@ -51,7 +51,9 @@
     loop: null,      // { from, to, kind: "section"|"line", label } bars repeated in tempo mode
     ramp: 0,         // speed trainer: + bpm each loop pass, up to the chart tempo
     curBpm: 0,       // bpm of the beat now playing (differs from bpmOf while ramping)
-    pass: 0          // loop pass now playing (0 = first time through)
+    pass: 0,         // loop pass now playing (0 = first time through)
+    page: false,     // page mode: the pedal turns a screenful, lines light themselves
+    pageRow: 0       // flat row the displayed page starts at (only navigation moves it)
   };
 
   function bpmOf(song) { return saved.bpm[song.slug] || song.bpm; }
@@ -79,7 +81,9 @@
     $("song-meta").textContent = [s.key, bpm + " bpm" + (bpm !== s.bpm ? " (" + pct + "%)" : "")].filter(Boolean).join(" · ");
     var chordsLabel = state.chords && Chords.names[state.patch].toLowerCase();
     var sound = [state.click && "click", chordsLabel].filter(Boolean).join(" + ") || "silent";
-    var mode = state.tempo ? "Tempo · " + sound : "Page-turn" + (chordsLabel ? " · " + chordsLabel : "");
+    var mode = state.page ? "Page · " + sound + (turnEst.length ? " · pedal tempo" : "")
+      : state.tempo ? "Tempo · " + sound
+      : "Page-turn" + (chordsLabel ? " · " + chordsLabel : "");
     if (state.loop) {
       mode += " · loop " + state.loop.label + (state.tempo && state.pass ? " ×" + (state.pass + 1) : "");
     }
@@ -102,17 +106,35 @@
   var MAX_ROWS = 6;  // longer sections scroll: a window of rows that follows the current one
   var renderedKey = "", renderedSong = null;
 
-  function windowStart(sec, inSec) {
+  // Normally the window slides one row at a time to follow the current line. In page
+  // mode it stops sliding: the section is cut into fixed screenfuls, so the display
+  // holds still and then flips, and the pedal is the only thing that turns it.
+  function pageBounds(sec, inSec) {
     var n = sec.rows.length;
-    if (n <= MAX_ROWS) return 0;
-    return Math.max(0, Math.min(n - MAX_ROWS, inSec - 1));  // keep one row of context above
+    if (state.page) {
+      var start = Math.floor(inSec / MAX_ROWS) * MAX_ROWS;
+      return { start: start, shown: Math.min(MAX_ROWS, n - start) };
+    }
+    if (n <= MAX_ROWS) return { start: 0, shown: n };
+    return { start: Math.max(0, Math.min(n - MAX_ROWS, inSec - 1)), shown: MAX_ROWS };
+  }
+
+  /// First and last flat row of the page on screen.
+  function pageRows() {
+    var s = state.song;
+    var anchor = s._rows[state.page ? state.pageRow : state.row];
+    var sec = s.sections[anchor.sec], b = pageBounds(sec, anchor.inSec);
+    return [sec._firstRow + b.start, sec._firstRow + b.start + b.shown - 1];
   }
 
   function renderStage(force) {
-    var s = state.song, cur = s._rows[state.row], sec = s.sections[cur.sec];
+    var s = state.song;
+    // In page mode the beat must not drag the page along, so the window comes from
+    // the page anchor; everywhere else it follows the current row as before.
+    var cur = s._rows[state.page ? state.pageRow : state.row], sec = s.sections[cur.sec];
     var rowsEl = $("rows");
-    var start = windowStart(sec, cur.inSec), shown = Math.min(sec.rows.length, MAX_ROWS);
-    var key = cur.sec + ":" + start;
+    var b = pageBounds(sec, cur.inSec), start = b.start, shown = b.shown;
+    var key = cur.sec + ":" + start + ":" + shown;
 
     if (force || renderedKey !== key || renderedSong !== s) {
       renderedKey = key;
@@ -233,11 +255,82 @@
     var s = state.song;
     idx = Math.max(0, Math.min(s._rows.length - 1, idx));
     state.row = idx;
+    if (state.page) { state.pageRow = idx; markPage(); }  // only navigation moves the page, never the beat
     saved.row = idx;
     persist();
     var L = state.loop, f = s._rows[idx];
     if (L && (f.firstBar > L.to || f.lastBar < L.from)) { state.loop = null; toast("Loop off"); }
     if (state.tempo) tempoJump(f.firstBar);
+    render();
+    share();
+  }
+
+  // ---- page mode ------------------------------------------------------------------
+  // One pedal press = one screenful. The gap between presses is a whole page of music,
+  // which is a far steadier tempo measurement than tapping a beat: divide it by the
+  // beats actually on that page and you get what the band is really playing.
+  var turnAt = 0, turnBeats = 0, turnEst = [];
+
+  function beatsBetween(firstFlat, lastFlat) {
+    var s = state.song, n = 0;
+    for (var i = s._rows[firstFlat].firstBar; i <= s._rows[lastFlat].lastBar; i++) n += s._bars[i].beats;
+    return n;
+  }
+
+  /// Remember where this page started and how long it is, for the next press to measure.
+  function markPage() {
+    var pr = pageRows();
+    turnAt = performance.now();
+    turnBeats = beatsBetween(pr[0], pr[1]);
+  }
+
+  function measureTurn() {
+    if (!turnAt || !turnBeats) return;
+    var bpm = turnBeats * 60000 / (performance.now() - turnAt);
+    // Out of range means it was not a page turn in time: a pause, a false step, a
+    // restart. Drop the history rather than yanking the tempo somewhere absurd.
+    if (bpm < 40 || bpm > 260) { turnEst = []; return; }
+    turnEst.push(bpm);
+    if (turnEst.length > 3) turnEst.shift();
+    var sum = 0;
+    for (var i = 0; i < turnEst.length; i++) sum += turnEst[i];
+    setBpm(sum / turnEst.length);
+  }
+
+  function turnPage(delta) {
+    var s = state.song, pr = pageRows();
+    if (delta > 0) {
+      measureTurn();
+      goRow(pr[1] + 1);                       // first row after this page; goRow clamps
+    } else {
+      turnEst = [];                           // going back is not a tempo measurement
+      if (pr[0] === 0) { goRow(0); }
+      else {
+        var prev = s._rows[pr[0] - 1];        // land on the start of the page before
+        var sec = s.sections[prev.sec], b = pageBounds(sec, prev.inSec);
+        goRow(sec._firstRow + b.start);
+      }
+    }
+  }
+
+  function togglePage() {
+    state.page = !state.page;
+    if (state.page) {
+      state.pageRow = state.row;
+      turnEst = []; turnAt = 0;
+      // Lines can only light themselves if the timeline is running. No count-in: in
+      // page mode the band is already playing when the first page goes up.
+      if (!state.tempo) {
+        state.curBpm = 0; state.pass = 0;
+        startRun({ fromBar: state.song._rows[state.row].firstBar,
+                   t0: performance.now() + lead(80), bpm: bpmOf(state.song),
+                   countIn: 0, loop: runLoop() });
+      }
+      markPage();
+      toast("Page mode · pedal turns the page");
+    } else {
+      toast("Page mode off");
+    }
     render();
     share();
   }
@@ -258,6 +351,8 @@
     tempoStop();
     state.song = prepare(song);
     state.row = Math.max(0, Math.min(song._rows.length - 1, row || 0));
+    state.pageRow = state.row;        // openSong bypasses goRow, so anchor the page here too
+    turnEst = []; turnAt = 0;         // a new song is a new tempo; forget the old pages
     saved.slug = song.slug;
     saved.row = state.row;
     persist();
@@ -434,6 +529,13 @@
             renderHeader();
           }
           var r = state.song._bars[ev.bar].row;
+          // Page mode: the band may still be finishing the page when the measured
+          // tempo has already run past it. Hold the highlight on the last line rather
+          // than turning early -- a page turned too soon loses everyone's place.
+          if (state.page) {
+            var pr = pageRows();
+            r = Math.max(pr[0], Math.min(pr[1], r));
+          }
           if (r !== state.row) { state.row = r; saved.row = r; persist(); }
           renderStage();
           renderBeats();
@@ -674,8 +776,8 @@
     if (!state.song) return;
     if (action === "songs" && tempoOpen()) { toggleTempo(); return; }   // Esc closes the panel
     switch (action) {
-      case "next": goRow(state.row + 1); break;
-      case "prev": goRow(state.row - 1); break;
+      case "next": if (state.page) turnPage(1); else goRow(state.row + 1); break;
+      case "prev": if (state.page) turnPage(-1); else goRow(state.row - 1); break;
       case "nextSection": goSection(1); break;
       case "prevSection": goSection(-1); break;
       case "restart": goRow(0); break;
@@ -695,6 +797,7 @@
       case "fullscreen": toggleFullscreen(); break;
       case "learn": toggleLearn(); break;
       case "link": toggleLink(); break;
+      case "page": togglePage(); break;
     }
     keepAwake();
   });

@@ -97,6 +97,20 @@ to take one screen solo, then again to rejoin, which also makes that screen the 
   so in the pedal-setup panel (K).
 - Plain browsers have no transport, so the web version stays solo.
 
+## Page mode
+
+`G`. One pedal press turns a whole screenful instead of one line, and the lines
+light themselves in between. The tempo comes from the gap between presses: a page is
+many bars of music, so dividing that interval by the beats on the page is a far steadier
+reading than tapping a beat, and it tracks what the band is actually playing rather than
+what the chart says. It drives the click and chord playback too.
+
+The page never turns on its own. If the measured tempo runs past the end of the page the
+highlight parks on the last line and waits -- a page turned early loses everyone's place,
+which is worse than a highlight that sits still. Intervals that imply under 40 or over
+260 bpm (a pause between songs, a stumble, a false step) are discarded rather than
+yanking the tempo, and the last three readings are averaged.
+
 ## Input: built for a foot pedal we don't own yet
 
 Every input becomes a named **action** (`next`, `prev`, `nextSection`, `play`...).
