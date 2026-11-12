@@ -33,10 +33,36 @@
     <span class="label">Next</span>
     <span id="next-name"></span>
     <span id="next-chords"></span>
-    <span id="hint">→ next · ← back · ] [ section · P tempo · S songs · K pedal setup</span>
+    <span id="hint">→ next · ← back · ] [ section · P tempo · B speed &amp; loop · S songs · K pedal setup</span>
   </footer>
 
   <div id="countin" hidden></div>
+  <div id="toast" hidden></div>
+
+  <div id="tempo" class="overlay" data-no-nav hidden>
+    <div class="panel">
+      <h2>Tempo &amp; practice</h2>
+      <div class="t-big">
+        <button data-act="bpm:-5">&minus;5</button><button data-act="bpm:-1">&minus;1</button>
+        <span><b id="t-bpm"></b> bpm<small id="t-pct"></small></span>
+        <button data-act="bpm:1">+1</button><button data-act="bpm:5">+5</button>
+      </div>
+      <div class="t-row"><span class="lbl">Speed</span>
+        <button data-act="pct:50">50%</button><button data-act="pct:60">60%</button><button data-act="pct:75">75%</button><button data-act="pct:90">90%</button><button data-act="pct:100">100%</button>
+        <button data-act="tap" class="tap">Tap</button>
+      </div>
+      <div class="t-row"><span class="lbl">Loop</span>
+        <button data-act="loop:section">This section</button><button data-act="loop:line">This line</button>
+        <span id="t-loop" class="note"></span>
+      </div>
+      <div class="t-row"><span class="lbl">Speed up</span>
+        <button data-act="ramp:0">Off</button><button data-act="ramp:1">+1</button><button data-act="ramp:2">+2</button><button data-act="ramp:5">+5</button>
+        <span class="note">bpm each loop, up to the chart tempo</span>
+      </div>
+      <div class="t-row"><button data-act="play" class="go">Start / stop</button></div>
+      <p class="tip">+ &minus; 1 bpm &middot; . , 5 bpm &middot; 0 chart tempo &middot; T tap &middot; O loop section &middot; B or Esc to close</p>
+    </div>
+  </div>
 
   <div id="picker" class="overlay" data-no-nav hidden>
     <div class="panel">

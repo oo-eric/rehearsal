@@ -45,10 +45,16 @@
     bar: -1,         // flat bar index lit in tempo mode
     beat: -1,
     tempo: false,
-    click: CFG.clickOnStart !== false
+    click: CFG.clickOnStart !== false,
+    loop: null,      // { from, to, kind: "section"|"line", label } bars repeated in tempo mode
+    ramp: 0,         // speed trainer: + bpm each loop pass, up to the chart tempo
+    curBpm: 0,       // bpm of the beat now playing (differs from bpmOf while ramping)
+    pass: 0          // loop pass now playing (0 = first time through)
   };
 
   function bpmOf(song) { return saved.bpm[song.slug] || song.bpm; }
+  // what's playing right now (a ramping loop runs ahead of the song's set tempo)
+  function nowBpm() { return state.tempo && state.curBpm ? state.curBpm : bpmOf(state.song); }
 
   // ---- rendering ----------------------------------------------------------------
   function el(tag, cls, text) {
@@ -67,9 +73,16 @@
   function renderHeader() {
     var s = state.song;
     $("song-title").textContent = s.title;
-    $("song-meta").textContent = [s.key, bpmOf(s) + " bpm"].filter(Boolean).join(" · ");
-    $("mode").textContent = state.tempo ? "Tempo " + bpmOf(s) + (state.click ? " · click" : " · silent") : "Page-turn";
+    var bpm = nowBpm(), pct = Math.round(bpm / s.bpm * 100);
+    $("song-meta").textContent = [s.key, bpm + " bpm" + (bpm !== s.bpm ? " (" + pct + "%)" : "")].filter(Boolean).join(" · ");
+    var mode = state.tempo ? "Tempo" + (state.click ? " · click" : " · silent") : "Page-turn";
+    if (state.loop) {
+      mode += " · loop " + state.loop.label + (state.tempo && state.pass ? " ×" + (state.pass + 1) : "");
+    }
+    $("mode").textContent = mode;
     document.body.classList.toggle("tempo", state.tempo);
+    document.body.classList.toggle("looping", !!state.loop);
+    renderTempo();
   }
 
   function renderMap() {
@@ -218,7 +231,9 @@
     state.row = idx;
     saved.row = idx;
     persist();
-    if (state.tempo) tempoJump(s._rows[idx].firstBar);
+    var L = state.loop, f = s._rows[idx];
+    if (L && (f.firstBar > L.to || f.lastBar < L.from)) { state.loop = null; toast("Loop off"); }
+    if (state.tempo) tempoJump(f.firstBar);
     render();
     share();
   }
@@ -288,16 +303,29 @@
     o.start(t); o.stop(t + 0.07);
   }
 
+  // The whole timeline follows from the run. A loop repeats bars from..to; with a
+  // ramp, each pass is `ramp` bpm faster until the chart tempo. Capped at MAX_EVENTS
+  // beats (over 20 minutes of looping), after which it stops like the end of a song.
+  var MAX_EVENTS = 6000;
   function buildEvents(r) {
-    var s = state.song, spb = 60000 / r.bpm, t = r.t0, list = [];
+    var s = state.song, L = r.loop, bpm = r.bpm, spb = 60000 / bpm, t = r.t0, list = [];
+    var cap = Math.max(s.bpm, r.bpm);
     for (var c = 0; c < r.countIn * 4; c++) {
-      list.push({ t: t, bar: -1, beat: c % 4, count: c % 4 + 1 });
+      list.push({ t: t, bar: -1, beat: c % 4, count: c % 4 + 1, bpm: bpm, pass: 0 });
       t += spb;
     }
-    for (var b = r.fromBar; b < s._bars.length; b++) {
+    var b = r.fromBar, pass = 0;
+    if (L && (b < L.from || b > L.to)) b = L.from;
+    while (b < s._bars.length && list.length < MAX_EVENTS) {
       for (var k = 0; k < s._bars[b].beats; k++) {
-        list.push({ t: t, bar: b, beat: k });
+        list.push({ t: t, bar: b, beat: k, bpm: bpm, pass: pass });
         t += spb;
+      }
+      b++;
+      if (L && b > L.to) {
+        b = L.from;
+        pass++;
+        if (L.ramp) { bpm = Math.min(cap, r.bpm + pass * L.ramp); spb = 60000 / bpm; }
       }
     }
     list.push({ t: t, end: true });
@@ -355,6 +383,10 @@
         if (ev.bar !== state.bar || ev.beat !== state.beat) {
           state.bar = ev.bar;
           state.beat = ev.beat;
+          if (ev.bpm !== state.curBpm || ev.pass !== state.pass) {
+            state.curBpm = ev.bpm; state.pass = ev.pass;
+            renderHeader();
+          }
           var r = state.song._bars[ev.bar].row;
           if (r !== state.row) { state.row = r; saved.row = r; persist(); }
           renderStage();
@@ -369,12 +401,19 @@
   // other devices, so they don't join a beat late.
   function lead(ms) { return Sync.count() ? Math.max(ms, 200) : ms; }
 
+  function runLoop() {
+    var L = state.loop;
+    return L ? { from: L.from, to: L.to, ramp: state.ramp } : null;
+  }
+
   function tempoStart() {
+    state.curBpm = 0; state.pass = 0;
     startRun({
       fromBar: state.song._rows[state.row].firstBar,
       t0: performance.now() + lead(80),
       bpm: bpmOf(state.song),
-      countIn: CFG.countInBars == null ? 1 : CFG.countInBars
+      countIn: CFG.countInBars == null ? 1 : CFG.countInBars,
+      loop: runLoop()
     });
     render();
   }
@@ -382,11 +421,30 @@
   // Jump while running: restart the timeline at `bar`, right away, no count-in.
   function tempoJump(bar) {
     var spb = 60000 / bpmOf(state.song);
-    startRun({ fromBar: bar, t0: performance.now() + lead(Math.min(spb, 120)), bpm: bpmOf(state.song), countIn: 0 });
+    state.curBpm = 0; state.pass = 0;
+    startRun({ fromBar: bar, t0: performance.now() + lead(Math.min(spb, 120)), bpm: bpmOf(state.song), countIn: 0, loop: runLoop() });
+  }
+
+  // Change tempo/loop without losing the groove: the new timeline picks up on the next
+  // downbeat that hasn't been scheduled yet, so the bar you're in plays out as it was.
+  function retime(bpm) {
+    if (!state.tempo) return;
+    var now = performance.now(), min = now + lead(AHEAD + 10), e = null;
+    for (var i = evIdx; i < events.length; i++) {
+      var ev = events[i];
+      if (ev.end) break;
+      if (ev.bar >= 0 && ev.beat === 0 && ev.t >= min) { e = ev; break; }
+    }
+    if (!e || state.bar < 0) {          // count-in, or the song is ending: just jump
+      tempoJump(state.bar >= 0 ? state.bar : state.song._rows[state.row].firstBar);
+      return;
+    }
+    startRun({ fromBar: e.bar, t0: e.t, bpm: bpm || e.bpm, countIn: 0, loop: runLoop() });
   }
 
   function tempoStop() {
     state.tempo = false;
+    state.curBpm = 0; state.pass = 0;
     run = null;
     state.bar = -1; state.beat = -1;
     clearInterval(timer); timer = null;
@@ -394,16 +452,97 @@
     $("countin").hidden = true;
   }
 
-  function nudgeTempo(d) {
-    var s = state.song, v = Math.max(40, Math.min(260, bpmOf(s) + d));
+  // ---- tempo controls: set, nudge, percent, tap, loop, speed trainer ------------------
+  // The set tempo is remembered per song (0 / Reset goes back to the chart's).
+  function setBpm(v) {
+    var s = state.song;
+    v = Math.max(40, Math.min(260, Math.round(v)));
     if (v === s.bpm) delete saved.bpm[s.slug]; else saved.bpm[s.slug] = v;
     persist();
-    if (state.tempo) {
-      var at = state.bar >= 0 ? Math.min(state.bar + 1, s._bars.length - 1) : s._rows[state.row].firstBar;
-      tempoJump(at);
-    }
+    retime(v);
     renderHeader();
     share();
+  }
+  function nudgeTempo(d) { setBpm(nowBpm() + d); }
+
+  var taps = [];
+  function tap() {
+    var now = performance.now();
+    if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
+    taps.push(now);
+    if (taps.length > 6) taps.shift();
+    if (taps.length < 3) { toast("Tap " + taps.length + "…"); return; }
+    var avg = (taps[taps.length - 1] - taps[0]) / (taps.length - 1);
+    setBpm(60000 / avg);
+    toast("Tap tempo " + bpmOf(state.song));
+  }
+
+  function loopFor(kind) {
+    var s = state.song, cur = s._rows[state.row];
+    if (kind === "line") {
+      return { from: cur.firstBar, to: cur.lastBar, kind: "line", label: "bars " + s._bars[cur.firstBar].num + "–" + s._bars[cur.lastBar].num };
+    }
+    var sec = s.sections[cur.sec], last = s._rows[sec._firstRow + sec.rows.length - 1];
+    return { from: s._rows[sec._firstRow].firstBar, to: last.lastBar, kind: "section", label: sec.name };
+  }
+
+  function toggleLoop(kind) {
+    kind = kind || "section";
+    state.loop = state.loop && state.loop.kind === kind ? null : loopFor(kind);
+    toast(state.loop ? "Loop " + state.loop.label : "Loop off");
+    retime();
+    renderHeader();
+    share();
+  }
+
+  function setRamp(n) {
+    state.ramp = n;
+    if (state.loop) retime();
+    renderHeader();
+    share();
+  }
+
+  // ---- tempo panel (B, or tap the bpm) ----------------------------------------------
+  function tempoOpen() { return !$("tempo").hidden; }
+  function toggleTempo() { $("tempo").hidden = !$("tempo").hidden; renderTempo(); }
+
+  function renderTempo() {
+    if (!state.song || !tempoOpen()) return;
+    var s = state.song, set = bpmOf(s), bpm = nowBpm();
+    $("t-bpm").textContent = bpm;
+    $("t-pct").textContent = Math.round(bpm / s.bpm * 100) + "% of " + s.bpm + " (chart)" +
+      (bpm !== set ? " · set " + set : "");
+    $("t-loop").textContent = state.loop ? "Looping " + state.loop.label : "Not looping";
+    var btns = $("tempo").querySelectorAll("[data-act]");
+    for (var i = 0; i < btns.length; i++) {
+      var a = btns[i].getAttribute("data-act").split(":"), on = false;
+      if (a[0] === "pct") on = set === Math.round(s.bpm * a[1] / 100);
+      if (a[0] === "loop") on = !!state.loop && state.loop.kind === a[1];
+      if (a[0] === "ramp") on = state.ramp === +a[1];
+      btns[i].classList.toggle("on", on);
+    }
+  }
+
+  $("tempo").addEventListener("click", function (e) {
+    if (e.target === $("tempo")) { toggleTempo(); return; }   // tap outside the panel
+    var b = e.target.closest && e.target.closest("[data-act]");
+    if (!b || !state.song) return;
+    var a = b.getAttribute("data-act").split(":");
+    if (a[0] === "bpm") nudgeTempo(+a[1]);
+    else if (a[0] === "pct") setBpm(state.song.bpm * a[1] / 100);
+    else if (a[0] === "tap") tap();
+    else if (a[0] === "loop") toggleLoop(a[1]);
+    else if (a[0] === "ramp") setRamp(+a[1]);
+    else if (a[0] === "play") Input.fire("play", "pointer");
+  });
+
+  var toastT = 0;
+  function toast(text) {
+    var t = $("toast");
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { t.hidden = true; }, 1400);
   }
 
   // ---- song picker -----------------------------------------------------------------
@@ -481,6 +620,7 @@
       return;
     }
     if (!state.song) return;
+    if (action === "songs" && tempoOpen()) { toggleTempo(); return; }   // Esc closes the panel
     switch (action) {
       case "next": goRow(state.row + 1); break;
       case "prev": goRow(state.row - 1); break;
@@ -491,6 +631,12 @@
       case "click": state.click = !state.click; ensureAudio(); renderHeader(); break;
       case "faster": nudgeTempo(1); break;
       case "slower": nudgeTempo(-1); break;
+      case "faster5": nudgeTempo(5); break;
+      case "slower5": nudgeTempo(-5); break;
+      case "tempoReset": setBpm(state.song.bpm); toast("Chart tempo " + state.song.bpm); break;
+      case "tap": tap(); break;
+      case "loop": toggleLoop("section"); break;
+      case "tempo": toggleTempo(); break;
       case "songs": openPicker(); break;
       case "fullscreen": toggleFullscreen(); break;
       case "learn": toggleLearn(); break;
@@ -504,7 +650,7 @@
   // a panel to close it. The rest of the screen is the left/right page-turn zones.
   $("top").addEventListener("click", function (e) {
     var at = function (sel) { return e.target.closest && e.target.closest(sel); };
-    Input.fire(at("#link") ? "link" : at("#status") ? "play" : "songs", "pointer");
+    Input.fire(at("#link") ? "link" : at("#status") ? "play" : at("#song-meta") ? "tempo" : "songs", "pointer");
   });
   ["picker", "learn"].forEach(function (id) {
     $(id).addEventListener("click", function (e) {
@@ -561,7 +707,8 @@
     var s = state.song;
     return {
       slug: s.slug, row: state.row, bars: s._bars.length, at: lastChange,
-      run: run && { fromBar: run.fromBar, t0: run.t0, bpm: run.bpm, countIn: run.countIn }
+      bpm: bpmOf(s), loop: state.loop, ramp: state.ramp,
+      run: run && { fromBar: run.fromBar, t0: run.t0, bpm: run.bpm, countIn: run.countIn, loop: run.loop }
     };
   }
 
@@ -592,16 +739,18 @@
       if (m.bars !== s._bars.length) {
         warnOnce("bars:" + s.slug, "A linked device has a different chart for " + s.title + " (" + m.bars + " bars here vs " + s._bars.length + "). Update songs.js on both.");
       }
+      // the band's tempo and loop, not this device's own
+      if (m.bpm === s.bpm) delete saved.bpm[s.slug]; else if (m.bpm) saved.bpm[s.slug] = m.bpm;
+      state.loop = m.loop || null;
+      state.ramp = m.ramp || 0;
       if (m.run) {
-        // the band's tempo, not this device's own nudge
-        if (m.run.bpm === s.bpm) delete saved.bpm[s.slug]; else saved.bpm[s.slug] = m.run.bpm;
         var t0 = Sync.toLocal(m.run.t0, peer);
         if (t0 == null) {             // no clock offset yet: show the spot, start on the first pong
           pending = { m: m, peer: peer };
           if (state.tempo) tempoStop();
           state.row = Math.min(s._bars[Math.min(m.run.fromBar, s._bars.length - 1)].row, s._rows.length - 1);
         } else {
-          var r = { fromBar: m.run.fromBar, t0: t0, bpm: m.run.bpm, countIn: m.run.countIn, peer: peer, t0Peer: m.run.t0 };
+          var r = { fromBar: m.run.fromBar, t0: t0, bpm: m.run.bpm, countIn: m.run.countIn, loop: m.run.loop || null, peer: peer, t0Peer: m.run.t0 };
           startRun(r, !!(run && run.peer === peer && run.t0Peer === r.t0Peer));
           state.row = s._bars[Math.min(r.fromBar, s._bars.length - 1)].row;
         }

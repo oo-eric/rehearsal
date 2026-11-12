@@ -35,6 +35,12 @@ TEMPO MODE (play along at the song's tempo)
                      bar by bar by itself. The lit yellow bar is "now".
   C ................ metronome click on/off
   + / - ............ tempo up/down 1 bpm (remembered per song)
+  . / , ............ tempo up/down 5 bpm.   0 = back to the chart tempo
+  T ................ tap tempo: tap 3+ times at the speed you want
+  O ................ loop this section (again to stop looping)
+  B ................ tempo & practice panel: 50-100% speed, loop just one line,
+                     and "speed up" that adds a few bpm every time the loop
+                     comes round, until you're back at full tempo
   Arrows / ] [ ..... jump while it runs; it keeps time from the new spot
 
 LINKED SCREENS (Mac/iPad/iPhone app only)

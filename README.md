@@ -57,7 +57,13 @@ OO-Rehearsal folder, or replace the whole folder.
 - **Page-turn** (default): one row (phrase) per press. Follows the band.
 - **Tempo** (`P`): 1-bar count-in, then auto-advances bar by bar at the song's bpm,
   with an optional Web Audio click scheduled on the audio clock (not timers), so it
-  stays steady. `+`/`-` nudge tempo per song (saved in localStorage).
+  stays steady.
+- **Tempo & practice** (`B`, or tap the bpm in the header): ±1/±5 bpm, 50–100% of the
+  chart tempo, tap tempo (`T`), reset (`0`), loop this section (`O`) or this line, and a
+  speed trainer that adds 1/2/5 bpm each loop pass up to the chart tempo. Changes made
+  while playing land on the next downbeat, so the groove doesn't stumble. The set tempo
+  is remembered per song (localStorage); the header shows it as a % of the chart.
+  Moving outside a loop turns it off.
 
 ## Linked screens (native app)
 

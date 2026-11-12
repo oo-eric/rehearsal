@@ -6,6 +6,11 @@
 //   play                     start/stop tempo mode (auto-advance at the song's bpm)
 //   click                    metronome click on/off (tempo mode)
 //   faster, slower           tempo +/- 1 bpm (remembered per song)
+//   faster5, slower5         tempo +/- 5 bpm
+//   tempoReset               back to the chart's tempo
+//   tap                      tap tempo (3+ taps)
+//   loop                     loop the current section in tempo mode (on/off)
+//   tempo                    tempo & practice panel (speed %, loop a line, speed trainer)
 //   songs                    open the song list
 //   fullscreen               toggle fullscreen
 //   learn                    show the input-learn panel (see what a pedal/clicker sends)
@@ -27,6 +32,12 @@ window.REHEARSAL_CONFIG = {
     click:       ["c"],
     faster:      ["=", "+"],
     slower:      ["-", "_"],
+    faster5:     ["."],
+    slower5:     [","],
+    tempoReset:  ["0"],
+    tap:         ["t"],
+    loop:        ["o"],
+    tempo:       ["b"],
     songs:       ["Escape", "s"],
     fullscreen:  ["f"],
     learn:       ["k"],
