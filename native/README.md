@@ -13,6 +13,7 @@ a browser can't do:
 | Tap the screen to turn pages | yes | yes |
 | Update songs without rebuilding | swap `songs.js` | drop `songs.js` in the app's songs folder |
 | Icon in the Dock / home screen | no | yes |
+| Linked screens (all devices follow the same song and beat) | no | **Yes** (see `../README.md`) |
 
 ## Which devices
 
@@ -71,6 +72,10 @@ close it.
 - `Shared/Stage.swift`: the WKWebView, the JS bridge (`webkit.messageHandlers.rehearsal`)
 - `Shared/MIDIInput.swift`: CoreMIDI in. Raw messages go to JS `Input.fromNative()`,
   so the `midi` rules in `app/config.js` decide what a pedal does, same as Chrome.
+- `Shared/PeerLink.swift`: MultipeerConnectivity session that links nearby copies of the
+  app and relays JSON to `Sync.fromNative()` (`app/sync.js`). JS cmd `sync` sends.
+  Needs `NSLocalNetworkUsageDescription` + `NSBonjourServices` (`_oo-rehearsal._tcp/_udp`)
+  in `project.yml`, or discovery silently finds nobody.
 - `Shared/WebRoot.swift`: copies `app/` to Caches and swaps in a user `songs.js`
 - `iOS/AppDelegate.swift`: scene lifecycle, full screen, idle timer off, audio session `.playback`
 - `iOS/KeyInput.swift` + `iOS/main.swift`: a `UIApplication` subclass that catches every
@@ -84,6 +89,11 @@ close it.
 Gotcha: `xcodebuild` with no `-destination` builds **only this Mac's architecture**
 even with `ARCHS = arm64 x86_64`. `build.sh` passes `generic/platform=macOS` and
 fails if the Intel slice is missing. Don't "simplify" that away.
+
+Note: MultipeerConnectivity is marked deprecated in the macOS/iOS 27 SDKs ("use Network
+framework"). It still builds and runs, and it's the only option that works the same back
+to Monterey / iPadOS 15. If it ever stops working, rewrite `PeerLink.swift` on
+`NWListener` + `NWBrowser` (Bonjour, `includePeerToPeer`). The JS side won't change.
 
 Gotcha: iOS 27 kills apps at launch that haven't adopted the UIScene lifecycle
 (`UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption` in the crash log).

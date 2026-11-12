@@ -24,6 +24,13 @@
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Connects to Bluetooth MIDI foot pedals.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_oo-rehearsal._tcp</string>
+		<string>_oo-rehearsal._udp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Links with OO Rehearsal on the band's other Macs, iPads and phones so every screen stays on the same song and beat.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

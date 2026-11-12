@@ -49,6 +49,10 @@ body.idle { cursor: none; }
 #song-id, #status { cursor: pointer; }
 #mode { color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.85em; }
 body.tempo #mode { color: var(--accent); font-weight: 700; }
+#link { color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75em; }
+#link.on { color: var(--dim); }
+#link.on::before { content: "\25CF  "; color: #3fbf6f; }
+#link.off { text-decoration: line-through; }
 #beats { display: none; gap: 0.6vh; }
 body.tempo #beats { display: flex; }
 #beats i {

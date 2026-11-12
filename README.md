@@ -11,6 +11,7 @@ rehearsal/
     index.html
     app.js          navigation, rendering, tempo mode (audio-clock click)
     input.js        input adapters: keyboard, pointer, MIDI -> named actions
+    sync.js         linked screens: clock offsets + messages between devices (native app only)
     config.js       key/pedal/MIDI bindings (the one file a bandmate might edit)
     style.css
     songs.js        GENERATED from the charts. Gitignored: the lyrics stay private.
@@ -58,6 +59,27 @@ OO-Rehearsal folder, or replace the whole folder.
   with an optional Web Audio click scheduled on the audio clock (not timers), so it
   stays steady. `+`/`-` nudge tempo per song (saved in localStorage).
 
+## Linked screens (native app)
+
+Every copy of the native app nearby (Mac, iPad, iPhone) links up automatically and follows
+whoever touched a control last: song, row, play/stop, jumps, and tempo nudges. The click
+on/off stays per device. The header shows **Linked · N**. Press `L` (or tap the badge)
+to take one screen solo, then again to rejoin, which also makes that screen the leader.
+
+- **Transport:** MultipeerConnectivity (`native/Shared/PeerLink.swift`). Works over Wi-Fi,
+  peer-to-peer Wi-Fi, or Bluetooth, with no router or internet. First launch asks for
+  Local Network permission; say yes.
+- **Timing:** `sync.js` pings each peer every second and keeps the clock offset from the
+  fastest round trip. A play/jump goes out as "bar X starts at T on my clock", and each
+  device converts T to its own clock and re-anchors as clocks drift. Clicks are placed
+  with `AudioContext.getOutputTimestamp()`, so speaker latency differences cancel.
+  In a simulated test (two WebKit pages, 4 ms + jitter each way) starts landed within
+  ±5 ms of each other. Not yet measured on real devices on a real network.
+- A device joining mid-song picks up the running song on the next beat.
+- Charts must match: a device that lacks the song, or has a different bar count, says
+  so in the pedal-setup panel (K).
+- Plain browsers have no transport, so the web version stays solo.
+
 ## Input: built for a foot pedal we don't own yet
 
 Every input becomes a named **action** (`next`, `prev`, `nextSection`, `play`...).
@@ -87,6 +109,5 @@ Bindings live in `app/config.js`; adding a new input device means adding an adap
 - **Setlists**: an ordered list of songs, where "next" at the end of a song moves to the next song.
 - **Per-instrument views**: bass.md / drums.md exist for some songs. A `V` toggle
   could swap the chord grid for bass notes or drum cues.
-- **Two screens** (computer + TV showing different things): open a second window.
-  It works today, but they don't sync. A sync step would need a tiny local server or
-  BroadcastChannel (same browser only).
+- **Linked screens in plain browsers**: native apps link (above); two browser windows
+  don't. Would need a tiny local server or BroadcastChannel (same browser only).

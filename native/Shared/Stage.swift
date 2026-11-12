@@ -6,11 +6,14 @@ import WebKit
 /// JS -> native: `webkit.messageHandlers.rehearsal.postMessage({cmd: ...})`
 ///   - "fullscreen": toggle the window (Mac) / no-op on iPad (always full screen)
 ///   - "midiStatus": list MIDI devices in the pedal-setup panel
-/// native -> JS: `Input.fromNative(bytes, deviceName)` for MIDI, `Input.note(...)` for the panel.
+///   - "sync": relay {msg, to, reliable} to linked devices (PeerLink)
+/// native -> JS: `Input.fromNative(bytes, deviceName)` for MIDI, `Input.note(...)` for the panel,
+///   `Sync.fromNative(json, peer)` / `Sync.setPeers([...])` for linked devices.
 final class Stage: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let webView: WKWebView
     var onFullscreen: (() -> Void)?
     private let midi = MIDIInput()
+    private let link = PeerLink()
     private var songsSource = ""
 
     override init() {
@@ -37,6 +40,18 @@ final class Stage: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         #endif
         midi.onMessage = { [weak self] bytes, from in self?.sendMIDI(bytes, from: from) }
         midi.start()
+        link.onMessage = { [weak self] json, peer in
+            self?.webView.evaluateJavaScript("window.Sync && Sync.fromNative(\(Self.js(json)), \(Self.js(peer)))", completionHandler: nil)
+        }
+        link.onPeers = { [weak self] _ in self?.sendPeers() }
+        link.start()
+    }
+
+    private func sendPeers() {
+        let list = link.peers.map { ["id": $0.id, "name": $0.name] }
+        guard let data = try? JSONSerialization.data(withJSONObject: list),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.Sync && Sync.setPeers(\(json))", completionHandler: nil)
     }
 
     func load() {
@@ -55,12 +70,16 @@ final class Stage: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             midi.connectAll()
             let list = midi.sourceNames.isEmpty ? "(none connected)" : midi.sourceNames.joined(separator: ", ")
             note("midi", "MIDI devices: \(list)")
+        case "sync":
+            guard let msg = body["msg"] as? String else { return }
+            link.send(msg, to: body["to"] as? String ?? "", reliable: body["reliable"] as? Bool ?? true)
         default: break
         }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         note("app", "Songs loaded from \(songsSource)")
+        sendPeers()   // a reload (⌘R) starts the page with no peer list
     }
 
     private func sendMIDI(_ bytes: [UInt8], from: String) {

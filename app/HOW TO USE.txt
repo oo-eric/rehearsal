@@ -37,6 +37,12 @@ TEMPO MODE (play along at the song's tempo)
   + / - ............ tempo up/down 1 bpm (remembered per song)
   Arrows / ] [ ..... jump while it runs; it keeps time from the new spot
 
+LINKED SCREENS (Mac/iPad/iPhone app only)
+-----------------------------------------
+Every OO Rehearsal app nearby links up by itself (top right says LINKED · 3).
+Whoever presses something leads: everyone jumps to the same song, line, and
+beat. L takes this screen solo; press L again to rejoin.
+
 FOOT PEDAL (when we get one)
 ---------------------------
 Most Bluetooth page-turner pedals act like a keyboard, sending arrow keys or

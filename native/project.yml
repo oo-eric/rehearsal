@@ -54,6 +54,8 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         UIBackgroundModes: []
         NSBluetoothAlwaysUsageDescription: Connects to Bluetooth MIDI foot pedals.
+        NSLocalNetworkUsageDescription: Links with OO Rehearsal on the band's other Macs, iPads and phones so every screen stays on the same song and beat.
+        NSBonjourServices: [_oo-rehearsal._tcp, _oo-rehearsal._udp]   # PeerLink.serviceType
 
   OORehearsal-macOS:
     type: application
@@ -82,3 +84,5 @@ targets:
         LSApplicationCategoryType: public.app-category.music
         NSHumanReadableCopyright: OWNER / OPERATORS
         LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        NSLocalNetworkUsageDescription: Links with OO Rehearsal on the band's other Macs, iPads and phones so every screen stays on the same song and beat.
+        NSBonjourServices: [_oo-rehearsal._tcp, _oo-rehearsal._udp]

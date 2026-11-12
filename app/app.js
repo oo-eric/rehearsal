@@ -220,6 +220,7 @@
     persist();
     if (state.tempo) tempoJump(s._rows[idx].firstBar);
     render();
+    share();
   }
 
   function goSection(delta) {
@@ -243,10 +244,19 @@
     persist();
     closePicker();
     render(true);
+    share();
   }
 
-  // ---- tempo mode: audio-clock scheduler -----------------------------------------
-  var audio = null, events = [], evIdx = 0, schedIdx = 0, timer = null, raf = 0;
+  // ---- tempo mode: one beat timeline, clicks placed on the audio clock --------------
+  // A run is { fromBar, t0, bpm, countIn }: t0 is the performance.now() ms of its first
+  // beat. The whole timeline follows from those four numbers, so linked devices that
+  // agree on the run (t0 converted to each one's own clock, see sync.js) show the same
+  // bar and click the same beat. Times stay in performance.now() ms and become audio
+  // time only when a click is scheduled ~150 ms ahead, so the two clocks can't drift
+  // apart over a long song.
+  var audio = null, events = [], evIdx = 0, schedIdx = 0, schedUntil = -Infinity;
+  var timer = null, raf = 0, run = null;
+  var AHEAD = 150, LATE = 30;  // ms: schedule this far ahead; skip clicks this far past
 
   function ensureAudio() {
     var AC = window.AudioContext || window.webkitAudioContext;
@@ -254,6 +264,17 @@
     if (!audio) audio = new AC();
     if (audio.state === "suspended") audio.resume();
     return audio;
+  }
+
+  // performance.now() ms -> the audio-context time that is *heard* then. The output
+  // timestamp includes the device's output latency, which differs between a Mac's
+  // speakers and an iPad's, so linked devices click together.
+  function audioTimeAt(ms) {
+    var ts = audio.getOutputTimestamp && audio.getOutputTimestamp();
+    var t = ts && ts.performanceTime > 0
+      ? ts.contextTime + (ms - ts.performanceTime) / 1000
+      : audio.currentTime + (ms - performance.now()) / 1000;
+    return Math.max(t, audio.currentTime);
   }
 
   function clickAt(t, accent) {
@@ -267,14 +288,13 @@
     o.start(t); o.stop(t + 0.07);
   }
 
-  // Build the beat timeline from `fromBar`, starting at audio time t0.
-  function buildEvents(fromBar, t0, countIn) {
-    var s = state.song, spb = 60 / bpmOf(s), t = t0, list = [];
-    for (var c = 0; c < countIn * 4; c++) {
+  function buildEvents(r) {
+    var s = state.song, spb = 60000 / r.bpm, t = r.t0, list = [];
+    for (var c = 0; c < r.countIn * 4; c++) {
       list.push({ t: t, bar: -1, beat: c % 4, count: c % 4 + 1 });
       t += spb;
     }
-    for (var b = fromBar; b < s._bars.length; b++) {
+    for (var b = r.fromBar; b < s._bars.length; b++) {
       for (var k = 0; k < s._bars[b].beats; k++) {
         list.push({ t: t, bar: b, beat: k });
         t += spb;
@@ -284,18 +304,42 @@
     return list;
   }
 
+  // Start (or replace) the running timeline. reanchor = same run nudged by a few ms
+  // (clock-offset update from a linked device): don't click beats already scheduled.
+  function startRun(r, reanchor) {
+    ensureAudio();
+    run = r;
+    events = buildEvents(r);
+    evIdx = 0;
+    var now = performance.now(), skipTo = now - LATE;
+    if (reanchor) skipTo = Math.max(skipTo, schedUntil + 30000 / r.bpm);  // half a beat
+    else schedUntil = -Infinity;
+    schedIdx = 0;
+    while (schedIdx < events.length - 1 && events[schedIdx].t < skipTo) schedIdx++;
+    if (!reanchor) { state.bar = -1; state.beat = -1; }
+    state.tempo = true;
+    clearInterval(timer);
+    timer = setInterval(schedule, 25);
+    schedule();
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(frame);
+  }
+
   function schedule() {
-    var now = audio.currentTime;
-    while (schedIdx < events.length && events[schedIdx].t < now + 0.15) {
+    var now = performance.now();
+    while (schedIdx < events.length && events[schedIdx].t < now + AHEAD) {
       var ev = events[schedIdx];
-      if (!ev.end) clickAt(Math.max(ev.t, now), ev.beat === 0);
+      if (!ev.end && ev.t >= now - LATE && audio) {
+        clickAt(audioTimeAt(ev.t), ev.beat === 0);
+        schedUntil = ev.t;
+      }
       schedIdx++;
     }
   }
 
   function frame() {
     if (!state.tempo) return;
-    var now = audio.currentTime;
+    var now = performance.now();
     while (evIdx + 1 < events.length && events[evIdx + 1].t <= now) evIdx++;
     var ev = events[evIdx];
     if (ev && ev.t <= now) {
@@ -321,31 +365,29 @@
     raf = requestAnimationFrame(frame);
   }
 
+  // Lead time before the first beat. Linked: long enough for the message to reach the
+  // other devices, so they don't join a beat late.
+  function lead(ms) { return Sync.count() ? Math.max(ms, 200) : ms; }
+
   function tempoStart() {
-    if (!ensureAudio()) return;
-    state.tempo = true;
-    var first = state.song._rows[state.row].firstBar;
-    events = buildEvents(first, audio.currentTime + 0.08, CFG.countInBars == null ? 1 : CFG.countInBars);
-    evIdx = 0; schedIdx = 0;
-    state.bar = -1; state.beat = -1;
-    clearInterval(timer);
-    timer = setInterval(schedule, 25);
-    schedule();
-    cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(frame);
+    startRun({
+      fromBar: state.song._rows[state.row].firstBar,
+      t0: performance.now() + lead(80),
+      bpm: bpmOf(state.song),
+      countIn: CFG.countInBars == null ? 1 : CFG.countInBars
+    });
     render();
   }
 
-  // Jump while running: restart the timeline at `bar`, on the next beat, no count-in.
+  // Jump while running: restart the timeline at `bar`, right away, no count-in.
   function tempoJump(bar) {
-    var spb = 60 / bpmOf(state.song);
-    events = buildEvents(bar, audio.currentTime + Math.min(spb, 0.12), 0);
-    evIdx = 0; schedIdx = 0;
-    state.bar = -1; state.beat = -1;
+    var spb = 60000 / bpmOf(state.song);
+    startRun({ fromBar: bar, t0: performance.now() + lead(Math.min(spb, 120)), bpm: bpmOf(state.song), countIn: 0 });
   }
 
   function tempoStop() {
     state.tempo = false;
+    run = null;
     state.bar = -1; state.beat = -1;
     clearInterval(timer); timer = null;
     cancelAnimationFrame(raf);
@@ -361,6 +403,7 @@
       tempoJump(at);
     }
     renderHeader();
+    share();
   }
 
   // ---- song picker -----------------------------------------------------------------
@@ -381,6 +424,7 @@
     $("picker").hidden = false;
     markPick();
     render();
+    share();
   }
   function closePicker() { $("picker").hidden = true; }
   function pickerOpen() { return !$("picker").hidden; }
@@ -443,13 +487,14 @@
       case "nextSection": goSection(1); break;
       case "prevSection": goSection(-1); break;
       case "restart": goRow(0); break;
-      case "play": if (state.tempo) { tempoStop(); render(); } else tempoStart(); break;
+      case "play": if (state.tempo) { tempoStop(); render(); } else tempoStart(); share(); break;
       case "click": state.click = !state.click; ensureAudio(); renderHeader(); break;
       case "faster": nudgeTempo(1); break;
       case "slower": nudgeTempo(-1); break;
       case "songs": openPicker(); break;
       case "fullscreen": toggleFullscreen(); break;
       case "learn": toggleLearn(); break;
+      case "link": toggleLink(); break;
     }
     keepAwake();
   });
@@ -458,7 +503,8 @@
   // Tap the song title for the song list, the mode label for tempo mode, and outside
   // a panel to close it. The rest of the screen is the left/right page-turn zones.
   $("top").addEventListener("click", function (e) {
-    Input.fire(e.target.closest && e.target.closest("#status") ? "play" : "songs", "pointer");
+    var at = function (sel) { return e.target.closest && e.target.closest(sel); };
+    Input.fire(at("#link") ? "link" : at("#status") ? "play" : "songs", "pointer");
   });
   ["picker", "learn"].forEach(function (id) {
     $(id).addEventListener("click", function (e) {
@@ -504,6 +550,125 @@
     resizeT = setTimeout(function () { if (state.song) render(true); }, 120);
   });
 
+  // ---- linked devices (sync.js) --------------------------------------------------------
+  // Whoever acts last leads: every song/row/play/stop/jump/tempo change goes out as a
+  // full snapshot and every linked device adopts it. The click on/off stays per device.
+  // A device that links up mid-song gets a "hello" snapshot, adopted only if it is
+  // newer than the last change made here (so two idle devices don't swap songs).
+  var lastChange = 0, applying = false, pending = null, warned = {}, known = {};
+
+  function snapshot() {
+    var s = state.song;
+    return {
+      slug: s.slug, row: state.row, bars: s._bars.length, at: lastChange,
+      run: run && { fromBar: run.fromBar, t0: run.t0, bpm: run.bpm, countIn: run.countIn }
+    };
+  }
+
+  function share() {
+    if (applying || !state.song) return;
+    lastChange = Date.now();
+    pending = null;
+    if (Sync.enabled()) Sync.send("state", snapshot());
+  }
+
+  function hasSong(slug) {
+    for (var i = 0; i < SONGS.length; i++) if (SONGS[i].slug === slug) return true;
+    return false;
+  }
+
+  function applyState(m, peer) {
+    pending = null;
+    if (!hasSong(m.slug)) {
+      warnOnce("slug:" + m.slug, "A linked device is on “" + m.slug + "”, which this one doesn't have. Update songs.js.");
+      return;
+    }
+    applying = true;
+    try {
+      lastChange = m.at;
+      if (!state.song || state.song.slug !== m.slug) openSong(m.slug, m.row);
+      closePicker();
+      var s = state.song;
+      if (m.bars !== s._bars.length) {
+        warnOnce("bars:" + s.slug, "A linked device has a different chart for " + s.title + " (" + m.bars + " bars here vs " + s._bars.length + "). Update songs.js on both.");
+      }
+      if (m.run) {
+        // the band's tempo, not this device's own nudge
+        if (m.run.bpm === s.bpm) delete saved.bpm[s.slug]; else saved.bpm[s.slug] = m.run.bpm;
+        var t0 = Sync.toLocal(m.run.t0, peer);
+        if (t0 == null) {             // no clock offset yet: show the spot, start on the first pong
+          pending = { m: m, peer: peer };
+          if (state.tempo) tempoStop();
+          state.row = Math.min(s._bars[Math.min(m.run.fromBar, s._bars.length - 1)].row, s._rows.length - 1);
+        } else {
+          var r = { fromBar: m.run.fromBar, t0: t0, bpm: m.run.bpm, countIn: m.run.countIn, peer: peer, t0Peer: m.run.t0 };
+          startRun(r, !!(run && run.peer === peer && run.t0Peer === r.t0Peer));
+          state.row = s._bars[Math.min(r.fromBar, s._bars.length - 1)].row;
+        }
+      } else {
+        if (state.tempo) tempoStop();
+        state.row = Math.max(0, Math.min(s._rows.length - 1, m.row));
+      }
+      saved.row = state.row;
+      persist();
+      render();
+    } finally {
+      applying = false;
+    }
+  }
+
+  function warnOnce(key, text) {
+    if (warned[key]) return;
+    warned[key] = true;
+    Input.note("sync", text);
+  }
+
+  Sync.on("state", function (m, peer) { applyState(m, peer); });
+  Sync.on("hello", function (m, peer) { if (m.at > lastChange) applyState(m, peer); });
+
+  Sync.onOffset(function (peer) {
+    if (pending && pending.peer === peer) { applyState(pending.m, peer); return; }
+    // Clocks drift a few ms a minute: keep a followed run anchored to the leader's clock.
+    if (run && run.peer === peer) {
+      var t0 = Sync.toLocal(run.t0Peer, peer);
+      if (t0 != null && Math.abs(t0 - run.t0) > 1) {
+        var r = {}; for (var k in run) r[k] = run[k];
+        r.t0 = t0;
+        startRun(r, true);
+      }
+    }
+  });
+
+  Sync.onPeers(function (list) {
+    renderLink();
+    // introduce ourselves to anyone new; their side decides whether we're newer
+    if (state.song && lastChange) {
+      for (var i = 0; i < list.length; i++) {
+        if (!known[list[i].id]) Sync.sendTo(list[i].id, "hello", snapshot());
+      }
+    }
+    known = {};
+    for (var j = 0; j < list.length; j++) known[list[j].id] = true;
+  });
+
+  function renderLink() {
+    var n = $("link");
+    if (!Sync.available) { n.hidden = true; return; }
+    n.hidden = false;
+    var peers = Sync.peers();
+    n.className = !Sync.enabled() ? "off" : peers.length ? "on" : "";
+    n.textContent = !Sync.enabled() ? "Unlinked" : peers.length ? "Linked · " + (peers.length + 1) : "Solo";
+    n.title = peers.map(function (p) { return p.name; }).join(", ");
+  }
+
+  function toggleLink() {
+    if (!Sync.available) return;
+    Sync.setEnabled(!Sync.enabled());
+    Input.note("sync", Sync.enabled() ? "Linked: following other OO Rehearsal screens nearby." : "Unlinked: this screen goes solo.");
+    if (Sync.enabled()) share();   // take the lead from wherever this screen is
+    renderLink();
+  }
+
   // ---- boot ------------------------------------------------------------------------
   if (!SONGS.length) {
     $("section-name").textContent = "No songs";
@@ -513,6 +678,8 @@
   wake();
   if (saved.slug) openSong(saved.slug, saved.row || 0);
   else { openSong(SONGS[0].slug, 0); openPicker(); }
+  lastChange = 0;  // opening the last song at launch isn't a change worth pushing to others
+  renderLink();
 
   // First render can run before web fonts / final window size settle (seen in the
   // native app on relaunch): measure again once they have.
@@ -522,5 +689,5 @@
   setTimeout(settle, 400);
 
   // test hook (harmless in normal use)
-  window.Rehearsal = { state: state, openSong: openSong, fire: Input.fire };
+  window.Rehearsal = { state: state, openSong: openSong, fire: Input.fire, run: function () { return run; } };
 })();

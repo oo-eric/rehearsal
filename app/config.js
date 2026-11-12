@@ -9,6 +9,7 @@
 //   songs                    open the song list
 //   fullscreen               toggle fullscreen
 //   learn                    show the input-learn panel (see what a pedal/clicker sends)
+//   link                     link/unlink this screen with other OO Rehearsal apps nearby
 //
 // FOOT PEDALS: most Bluetooth/USB page-turner pedals (AirTurn, PageFlip, iRig BlueTurn,
 // generic "Bluetooth page turner" pedals) pretend to be a keyboard and send arrow keys,
@@ -28,7 +29,8 @@ window.REHEARSAL_CONFIG = {
     slower:      ["-", "_"],
     songs:       ["Escape", "s"],
     fullscreen:  ["f"],
-    learn:       ["k"]
+    learn:       ["k"],
+    link:        ["l"]
   },
 
   // Mouse / trackpad / touch: tap the right two-thirds of the screen = next,
