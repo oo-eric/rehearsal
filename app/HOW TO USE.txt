@@ -34,6 +34,7 @@ TEMPO MODE (play along at the song's tempo)
   P ................ start/stop. One bar of count-in clicks, then it advances
                      bar by bar by itself. The lit yellow bar is "now".
   C ................ metronome click on/off
+  H ................ play the chords along with it (soft keys + bass) on/off
   + / - ............ tempo up/down 1 bpm (remembered per song)
   . / , ............ tempo up/down 5 bpm.   0 = back to the chart tempo
   T ................ tap tempo: tap 3+ times at the speed you want

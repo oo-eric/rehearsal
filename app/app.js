@@ -46,6 +46,7 @@
     beat: -1,
     tempo: false,
     click: CFG.clickOnStart !== false,
+    chords: saved.chords === true,   // play the chart's chords in tempo mode (per device)
     loop: null,      // { from, to, kind: "section"|"line", label } bars repeated in tempo mode
     ramp: 0,         // speed trainer: + bpm each loop pass, up to the chart tempo
     curBpm: 0,       // bpm of the beat now playing (differs from bpmOf while ramping)
@@ -75,7 +76,8 @@
     $("song-title").textContent = s.title;
     var bpm = nowBpm(), pct = Math.round(bpm / s.bpm * 100);
     $("song-meta").textContent = [s.key, bpm + " bpm" + (bpm !== s.bpm ? " (" + pct + "%)" : "")].filter(Boolean).join(" · ");
-    var mode = state.tempo ? "Tempo" + (state.click ? " · click" : " · silent") : "Page-turn";
+    var sound = [state.click && "click", state.chords && "chords"].filter(Boolean).join(" + ") || "silent";
+    var mode = state.tempo ? "Tempo · " + sound : "Page-turn" + (state.chords ? " · chords" : "");
     if (state.loop) {
       mode += " · loop " + state.loop.label + (state.tempo && state.pass ? " ×" + (state.pass + 1) : "");
     }
@@ -292,6 +294,31 @@
     return Math.max(t, audio.currentTime);
   }
 
+  // Chords go through one bus so a stop or a jump can fade out whatever is ringing.
+  var bus = null;
+  function chordBus() {
+    if (!bus) { bus = audio.createGain(); bus.gain.value = CFG.chordVolume == null ? 0.8 : CFG.chordVolume; bus.connect(audio.destination); }
+    return bus;
+  }
+  function silenceChords() {
+    if (!bus) return;
+    var b = bus, t = audio.currentTime;
+    bus = null;
+    b.gain.cancelScheduledValues(t);
+    b.gain.setValueAtTime(b.gain.value, t);
+    b.gain.linearRampToValueAtTime(0, t + 0.08);
+    setTimeout(function () { b.disconnect(); }, 400);
+  }
+
+  function toggleChords() {
+    state.chords = !state.chords;
+    saved.chords = state.chords;
+    persist();
+    if (state.chords) ensureAudio(); else if (audio) silenceChords();
+    toast(state.chords ? "Chords on" + (state.tempo ? "" : " (they play in tempo mode, P)") : "Chords off");
+    renderHeader();
+  }
+
   function clickAt(t, accent) {
     if (!state.click || !audio) return;
     var o = audio.createOscillator(), g = audio.createGain();
@@ -311,14 +338,18 @@
     var s = state.song, L = r.loop, bpm = r.bpm, spb = 60000 / bpm, t = r.t0, list = [];
     var cap = Math.max(s.bpm, r.bpm);
     for (var c = 0; c < r.countIn * 4; c++) {
-      list.push({ t: t, bar: -1, beat: c % 4, count: c % 4 + 1, bpm: bpm, pass: 0 });
+      list.push({ t: t, bar: -1, beat: c % 4, count: c % 4 + 1, bpm: bpm, pass: 0, cb: 0 });
       t += spb;
     }
     var b = r.fromBar, pass = 0;
     if (L && (b < L.from || b > L.to)) b = L.from;
     while (b < s._bars.length && list.length < MAX_EVENTS) {
+      var ch = s._bars[b].chords, starts = {}, acc = 0;
+      for (var j = 0; j < ch.length; j++) { starts[acc] = ch[j]; acc += ch[j].b; }
       for (var k = 0; k < s._bars[b].beats; k++) {
-        list.push({ t: t, bar: b, beat: k, bpm: bpm, pass: pass });
+        // cb = beats the chord starting on this beat lasts (0 = no chord starts here)
+        var st = starts[k];
+        list.push({ t: t, bar: b, beat: k, bpm: bpm, pass: pass, chord: st ? st.c : "", cb: st ? st.b : 0 });
         t += spb;
       }
       b++;
@@ -359,6 +390,7 @@
       var ev = events[schedIdx];
       if (!ev.end && ev.t >= now - LATE && audio) {
         clickAt(audioTimeAt(ev.t), ev.beat === 0);
+        if (state.chords && ev.cb) Chords.play(audio, chordBus(), ev.chord, audioTimeAt(ev.t), ev.cb * 60 / ev.bpm);
         schedUntil = ev.t;
       }
       schedIdx++;
@@ -422,6 +454,7 @@
   function tempoJump(bar) {
     var spb = 60000 / bpmOf(state.song);
     state.curBpm = 0; state.pass = 0;
+    if (audio) silenceChords();
     startRun({ fromBar: bar, t0: performance.now() + lead(Math.min(spb, 120)), bpm: bpmOf(state.song), countIn: 0, loop: runLoop() });
   }
 
@@ -443,6 +476,7 @@
   }
 
   function tempoStop() {
+    if (audio) silenceChords();
     state.tempo = false;
     state.curBpm = 0; state.pass = 0;
     run = null;
@@ -519,6 +553,7 @@
       if (a[0] === "pct") on = set === Math.round(s.bpm * a[1] / 100);
       if (a[0] === "loop") on = !!state.loop && state.loop.kind === a[1];
       if (a[0] === "ramp") on = state.ramp === +a[1];
+      if (a[0] === "sound") on = !!state[a[1]];
       btns[i].classList.toggle("on", on);
     }
   }
@@ -534,6 +569,7 @@
     else if (a[0] === "loop") toggleLoop(a[1]);
     else if (a[0] === "ramp") setRamp(+a[1]);
     else if (a[0] === "play") Input.fire("play", "pointer");
+    else if (a[0] === "sound") Input.fire(a[1], "pointer");
   });
 
   var toastT = 0;
@@ -629,6 +665,7 @@
       case "restart": goRow(0); break;
       case "play": if (state.tempo) { tempoStop(); render(); } else tempoStart(); share(); break;
       case "click": state.click = !state.click; ensureAudio(); renderHeader(); break;
+      case "chords": toggleChords(); break;
       case "faster": nudgeTempo(1); break;
       case "slower": nudgeTempo(-1); break;
       case "faster5": nudgeTempo(5); break;
