@@ -28,6 +28,10 @@ targets:
         optional: true                # a fresh clone has none: the demo song shows
       - path: ../app/songs.example.js
         buildPhase: resources
+      - path: ../midi                 # played parts: midi/<slug>-bass.mid (gitignored)
+        type: folder
+        buildPhase: resources
+        optional: true
     settings:
       base:
         PRODUCT_NAME: OO Rehearsal
@@ -70,6 +74,10 @@ targets:
         optional: true                # a fresh clone has none: the demo song shows
       - path: ../app/songs.example.js
         buildPhase: resources
+      - path: ../midi                 # played parts: midi/<slug>-bass.mid (gitignored)
+        type: folder
+        buildPhase: resources
+        optional: true
     settings:
       base:
         PRODUCT_NAME: OO Rehearsal

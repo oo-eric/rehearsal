@@ -51,11 +51,14 @@ struct PanelTitle: View {
     }
 }
 
+/// A line of keyboard shortcuts under a panel (Mac only, see Theme.keyHints).
 struct Tip: View {
     let text: String
     let m: Metrics
     var body: some View {
-        Text(text).font(Theme.sans(m.vh(2.4) * 0.85)).foregroundColor(Theme.dim).padding(.top, m.vh(1.5))
+        if Theme.keyHints {
+            Text(text).font(Theme.sans(m.vh(2.4) * 0.85)).foregroundColor(Theme.dim).padding(.top, m.vh(1.5))
+        }
     }
 }
 

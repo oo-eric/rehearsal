@@ -104,6 +104,7 @@ final class Rehearsal: ObservableObject {
         songs = lib.songs
         songsSource = lib.source
         note("app", "Songs loaded from \(lib.source)")
+        for s in songs { if let p = s.bassPart { note("app", "\(s.title): bass from \(p.source), \(p.notes.count) notes, \(p.leadIn)-bar lead-in skipped, \(p.fit.hits)/\(p.fit.of) chord changes on the root") } }
         guard !songs.isEmpty else { return }
         wake()
         if let slug = saved.slug { openSong(slug, row: saved.row ?? 0) }
@@ -364,9 +365,24 @@ final class Rehearsal: ObservableObject {
             let ev = events[schedIdx]
             if !ev.end && ev.t >= now - late, let synth = synth {
                 if click { synth.click(atMs: ev.t, accent: ev.beat == 0) }
-                if (chords || bass) && ev.cb > 0 {
+                // A song with a played bass part (midi/<slug>-bass.mid) uses it instead
+                // of the generated root notes.
+                let part = bass && ev.bar >= 0 ? song?.bassPart : nil
+                if (chords || (bass && part == nil)) && ev.cb > 0 {
                     synth.play(chord: ev.chord, atMs: ev.t, dur: ev.cb * 60 / ev.bpm, patch: patch,
-                               spb: 60 / ev.bpm, chords: chords, bass: bass)
+                               spb: 60 / ev.bpm, chords: chords, bass: bass && part == nil)
+                }
+                if let part = part, let s = song {
+                    let b0 = s.barStart[ev.bar] + Double(ev.beat)
+                    let barEnd = s.barStart[ev.bar] + s.bars[ev.bar].beats
+                    let spbMs = 60000 / ev.bpm, pushed = MidiPart.pushed
+                    // a beat owns the notes played just ahead of it too: a downbeat pushed
+                    // early still sounds when a loop comes back around to it
+                    for n in part.notes(from: b0 - pushed, to: min(b0 + 1, barEnd) - pushed) {
+                        // notes keep their written length, even across a loop's end
+                        synth.bass(note: n.note, atMs: ev.t + (n.beat - b0) * spbMs,
+                                   dur: n.len * spbMs / 1000, vel: n.vel)
+                    }
                 }
                 schedUntil = ev.t
             }
@@ -524,7 +540,7 @@ final class Rehearsal: ObservableObject {
         saved.chords = chords
         persist()
         if chords { synth?.start() } else { synth?.silenceChords() }
-        showToast(chords ? "Chords on" + (tempo ? "" : " (they play in tempo mode, P)") : "Chords off")
+        showToast(chords ? "Chords on" + (tempo ? "" : (Theme.keyHints ? " (they play in tempo mode, P)" : " (they play in tempo mode)")) : "Chords off")
     }
 
     /// Bass is its own sound: on with the chords for the full guide, or alone (with the
@@ -534,7 +550,8 @@ final class Rehearsal: ObservableObject {
         saved.bass = bass
         persist()
         if bass { synth?.start() } else { synth?.silenceChords() }
-        showToast(bass ? "Bass on" + (tempo ? "" : " (it plays in tempo mode, P)") : "Bass off")
+        let played = song?.bassPart != nil ? " · played part" : ""
+        showToast(bass ? "Bass on" + played + (tempo ? "" : (Theme.keyHints ? " (it plays in tempo mode, P)" : " (it plays in tempo mode)")) : "Bass off")
     }
 
     /// Pick a patch (or the next one). Takes effect on the next chord change; turns
@@ -612,12 +629,44 @@ final class Rehearsal: ObservableObject {
         return action != nil
     }
 
-    /// Tap/click on the page area: x as a fraction of the width.
+    /// Tap/click on the page area: x as a fraction of the width. Always one line, even in
+    /// page mode (swipe for whole pages).
     func pointer(x: Double) {
-        guard Config.pointer else { return }
-        let action: Action = x < 1.0 / 3 ? .prev : .next
-        report("pointer", (action == .prev ? "left" : "right") + " side click", action)
-        fire(action)
+        guard Config.pointer, !anyOverlay else { return }
+        let back = x < 1.0 / 3
+        report("pointer", (back ? "left" : "right") + " side tap", back ? .prev : .next)
+        stepLine(back ? -1 : 1)
+    }
+
+    /// Horizontal swipe on the page area: +1 = next screenful (finger moved left), -1 = back.
+    func swipe(_ delta: Int) {
+        guard Config.pointer, !anyOverlay else { return }
+        report("pointer", delta > 0 ? "swipe left" : "swipe right", delta > 0 ? .next : .prev)
+        if page { turnPage(delta) } else { scrollPage(delta) }
+    }
+
+    private var anyOverlay: Bool { tempoOpen || pickerOpen || learnOpen }
+
+    private func stepLine(_ delta: Int) {
+        goRow(row + delta)
+        // In page mode goRow re-marks the page clock; a line tap isn't a page turn, so
+        // don't let the next pedal press measure tempo from it.
+        if page { turnAt = 0; turnEst = []; pedalTempo = false }
+    }
+
+    /// Outside page mode the window slides with the current line, so "a page" is the rows
+    /// on screen now. Forward lands just past them (the old last line stays on top as
+    /// context); back is the mirror image, and crosses into the previous section's last
+    /// screenful from a section's first line.
+    private func scrollPage(_ delta: Int) {
+        guard let s = song else { return }
+        if delta > 0 { goRow(pageRows().1 + 1); return }
+        let cur = s.rows[row], step = Self.maxRows - 1
+        // inSec 1 shows the same window as 0; land on the section's top line instead
+        func land(_ sec: Int, _ inSec: Int) { goRow(s.firstRowOfSection[sec] + (inSec <= 1 ? 0 : inSec)) }
+        if cur.inSec > 0 { land(cur.sec, max(0, cur.inSec - step)); return }
+        guard cur.sec > 0 else { goRow(0); return }
+        land(cur.sec - 1, max(0, s.sections[cur.sec - 1].rows.count - step))
     }
 
     func midi(_ d: [UInt8], from: String) {

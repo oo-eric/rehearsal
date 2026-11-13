@@ -5,16 +5,16 @@ chords and bass, CoreMIDI for pedals, MultipeerConnectivity for linked screens. 
 codebase (`Shared/`) builds for macOS 12+ and iOS 15+. It used to wrap the web version
 (`../app/`) in a WKWebView; it doesn't anymore. The web version still runs in a browser.
 
-| | Web (`app/index.html` in a browser) | This app |
-|---|---|---|
-| MIDI foot pedals | Chrome only | **Built in** (CoreMIDI: USB, Bluetooth MIDI, network) |
-| Screen stays on | `caffeinate` / System Settings | **Automatic** (Mac and iPad) |
-| Click track with the iPad silent switch on | muted | **Plays** |
-| Bluetooth page-turner pedals on iPhone/iPad | only with keyboard focus | **Always** (caught app-wide) |
-| Tap the screen to turn pages | yes | yes |
-| Update songs without rebuilding | swap `songs.js` | drop `songs.js` in the app's songs folder |
-| Icon in the Dock / home screen | no | yes |
-| Linked screens (all devices follow the same song and beat) | no | **Yes** (see `../README.md`) |
+|                                                            | Web (`app/index.html` in a browser) | This app                                              |
+| ---------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------- |
+| MIDI foot pedals                                           | Chrome only                         | **Built in** (CoreMIDI: USB, Bluetooth MIDI, network) |
+| Screen stays on                                            | `caffeinate` / System Settings      | **Automatic** (Mac and iPad)                          |
+| Click track with the iPad silent switch on                 | muted                               | **Plays**                                             |
+| Bluetooth page-turner pedals on iPhone/iPad                | only with keyboard focus            | **Always** (caught app-wide)                          |
+| Tap for the next line, swipe for the next page             | tap only                            | **Both**                                              |
+| Update songs without rebuilding                            | swap `songs.js`                     | drop `songs.js` in the app's songs folder             |
+| Icon in the Dock / home screen                             | no                                  | yes                                                   |
+| Linked screens (all devices follow the same song and beat) | no                                  | **Yes** (see `../README.md`)                          |
 
 ## Which devices
 
@@ -67,9 +67,28 @@ A `songs.js` there wins over the one built into the app. The pedal-setup panel (
 says which one loaded. The app reads the JSON inside `songs.js` directly
 (`Song.swift`), so it's the same file the web version and `build.py` use.
 
+## Played parts (MIDI)
+
+Drop a bass part at `rehearsal/midi/<song slug>-bass.mid` (e.g. `digital-love-glitch-bass.mid`)
+and rebuild: with Bass on (`N`), that song plays the part instead of the generated root
+notes. Everything else stays as it was: Chords still plays its patch on top, and the click is unchanged.
+
+- Any DAW export works: one track or many, any channel. Notes sound an octave below how they are written, as Logic's bass instruments play them (`MidiPart.transpose`).
+- It follows the beat, not the clock: practice tempos, loops and the speed trainer all
+  carry the part with them.
+- The file can start with a lead-in (a DAW's bar 1 before the chart begins). The app
+  finds it by trying whole-bar shifts until the bass notes land on the chart's chord
+  roots. Press `K` to see what it found ("1-bar lead-in skipped, 111/111 chord changes on
+  the root"). A low score means the part and the chart disagree, which usually means the chart is wrong.
+- `midi/` is gitignored like `songs.js`: unreleased parts stay off GitHub. To update a
+  device without rebuilding, put the file in a `midi` folder inside its songs folder.
+
 ## Touch (iPad with no keyboard)
 
-Tap the right ⅔ of the screen for next, left ⅓ for back. Tap the **song title** for the
+Tap the right ⅔ of the screen for the next line, left ⅓ for the previous one (one line
+at a time, in page mode too). Swipe left for the next screenful, right to go back a
+screenful: in page mode that's a page turn, and it measures tempo like the pedal does.
+Tap the **song title** for the
 song list, the **PAGE-TURN / TEMPO** label to start/stop tempo mode, outside a panel to
 close it.
 

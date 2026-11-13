@@ -118,6 +118,75 @@ do {
           "stop fades ringing and scheduled chords within 80 ms")
 }
 
+// MARK: - played parts (midi/<slug>-bass.mid)
+
+section("MIDI parts")
+// A hand-built file: 3/4, ppq 96, one count-in bar, then C2 on beat 0 (note-on vel 0 as
+// the off, running status) and E2 on beat 1.5 for half a beat (a real note-off).
+func vlq(_ v: Int) -> [UInt8] {
+    var out = [UInt8(v & 0x7F)], v = v >> 7
+    while v > 0 { out.insert(UInt8(v & 0x7F) | 0x80, at: 0); v >>= 7 }
+    return out
+}
+let trk: [UInt8] = [0x00, 0xFF, 0x58, 0x04, 3, 2, 24, 8]               // 3/4
+    + vlq(288) + [0x90, 36, 100] + vlq(96) + [36, 0]                       // bar 2 beat 0, running status off
+    + vlq(48) + [0x90, 40, 70] + vlq(48) + [0x80, 40, 0]                   // beat 1.5, half a beat
+    + [0x00, 0xFF, 0x2F, 0x00]
+let smf: [UInt8] = [0x4D, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, 0x4D, 0x54, 0x72, 0x6B,
+                    0, 0, UInt8(trk.count >> 8), UInt8(trk.count & 0xFF)] + trk
+let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("oo-midi-test-\(getpid())")
+try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+let threeJS = #"[{"slug":"waltz","title":"Waltz","bpm":90,"key":"C","sections":[{"name":"A","from":2,"to":3,"rows":[{"bars":[[{"c":"C","b":3}],[{"c":"E","b":3}]],"lyrics":["",""]}]}]}]"#
+let waltz = try! SongLibrary.parse(Data(threeJS.utf8))
+try! Data(smf).write(to: tmpDir.appendingPathComponent("waltz-bass.mid"))
+SongLibrary.attachParts(waltz, dirs: [tmpDir])
+let wn = waltz[0].bassPart?.notes ?? []
+check(wn.count == 2 && wn[0].beat == 0 && wn[0].len == 1 && wn[0].note == 36 + MidiPart.transpose,
+      "hand-built .mid: count-in bar skipped (3/4), running status + vel-0 off (\(wn.map { "\($0.note)@\($0.beat)x\($0.len)" }))")
+check(wn.count == 2 && wn[1].beat == 1.5 && wn[1].len == 0.5 && wn[1].vel == 70, "note-off and velocity read")
+check(waltz[0].bassPart?.notes(from: 1, to: 2).map { $0.note } == [40 + MidiPart.transpose], "notes(from:to:) finds the off-beat note")
+check(demo.allSatisfy { $0.bassPart == nil }, "songs without a file keep the generated bass")
+
+let realMid = here.appendingPathComponent("../midi/digital-love-glitch-bass.mid")
+let realSongs = here.appendingPathComponent("../app/songs.js")
+if FileManager.default.fileExists(atPath: realMid.path), let all = try? SongLibrary.parse(Data(contentsOf: realSongs)),
+   let dlg = all.first(where: { $0.slug == "digital-love-glitch" }) {
+    SongLibrary.attachParts([dlg], dirs: [realMid.deletingLastPathComponent()])
+    let part = dlg.bassPart
+    check(part?.notes.count == 583, "Digital Love Glitch: \(part?.notes.count ?? 0) bass notes read")
+    // Line-up check: where a note starts right on a chord change, is it that chord's bass?
+    var hit = 0, total = 0
+    for (bi, bar) in dlg.bars.enumerated() {
+        var at = dlg.barStart[bi]
+        for c in bar.chords {
+            if let ch = ChordTheory.parse(c.c), let n = part?.notes(from: at - 0.1, to: at + 0.1).min(by: { $0.note < $1.note }) {
+                total += 1; if n.note % 12 == ch.bass { hit += 1 }
+            }
+            at += c.b
+        }
+    }
+    check(total > 50 && Double(hit) / Double(total) > 0.8,
+          "lined up with the chart: \(hit)/\(total) chord changes start on that chord's bass note")
+    check(part?.leadIn == 1, "found the file's 1-bar lead-in")
+    // Every part in midi/: it must belong to a song and line up with its chart.
+    let midiDir = realMid.deletingLastPathComponent()
+    let files = ((try? FileManager.default.contentsOfDirectory(atPath: midiDir.path)) ?? []).filter { $0.hasSuffix("-bass.mid") }.sorted()
+    SongLibrary.attachParts(all, dirs: [midiDir])
+    for f in files {
+        let slug = String(f.dropLast("-bass.mid".count))
+        guard let p = all.first(where: { $0.slug == slug })?.bassPart else { check(false, "\(f): no song with slug \(slug)"); continue }
+        check(p.fit.of > 50 && Double(p.fit.hits) >= 0.95 * Double(p.fit.of),
+              "\(f): \(p.leadIn)-bar lead-in, \(p.fit.hits)/\(p.fit.of) chord changes on the root")
+    }
+} else {
+    print("skip Digital Love Glitch part (needs ../midi and app/songs.js)")
+}
+let bassOut = render(1.0) { $0.bass(note: 45, at: 0.1, dur: 0.4, vel: 100) }
+let bs = stats(bassOut[4410..<22050])
+check(bs.rms > 0.02 && bs.peak < 1 && tone(bassOut[4410..<22050], 110) > tone(bassOut[4410..<22050], 220),
+      "a part note sounds at its pitch (A2 110 Hz, rms \(String(format: "%.3f", bs.rms)))")
+check(stats(bassOut[30870...]).rms < 0.001, "and stops after its length")
+
 // MARK: - navigation and the beat timeline
 
 section("navigation")
@@ -180,8 +249,54 @@ check(solo.row == min(pr.1 + 1, song.rows.count - 1) && solo.pageRow == solo.row
 solo.fire(.prev)
 let pr2 = solo.pageRows()
 check(solo.row == pr2.0, "back from the top of a page -> previous page's start")
+solo.pointer(x: 0.9)
+let tapRow = solo.row
+check(tapRow == pr2.0 + 1, "page mode: a tap still moves one line (row \(pr2.0) -> \(tapRow))")
+solo.goRow(pr2.0)
+solo.swipe(1)
+check(solo.row == min(pr2.1 + 1, song.rows.count - 1), "page mode: swipe left turns a whole page")
 solo.fire(.page)
 check(!solo.page, "G again: page mode off")
+
+section("taps and swipes (no page mode)")
+solo.goRow(0)
+solo.pointer(x: 0.9); solo.pointer(x: 0.9); solo.pointer(x: 0.1)
+check(solo.row == 1, "right, right, left tap -> row 1 (row \(solo.row))")
+solo.goRow(0)
+let sw = solo.pageRows()
+solo.swipe(1)
+check(solo.row == sw.1 + 1, "swipe left -> first line past the screen (row \(sw.1) -> \(solo.row))")
+check(!(sw.0...sw.1).contains(solo.pageRows().1), "and the screen moved on (now \(solo.pageRows()))")
+solo.swipe(-1)
+check(solo.row == 0, "swipe right -> back to the screen it came from (row \(solo.row))")
+solo.swipe(-1)
+check(solo.row == 0, "swipe right at the top stays put")
+for _ in 0..<200 { solo.swipe(1) }
+check(solo.row == song.rows.count - 1, "swiping off the end stops on the last line")
+solo.goRow(0)
+
+// The demo's sections all fit on one screen; a 14-line verse exercises the sliding window.
+func rows(_ n: Int) -> String { (0..<n).map { _ in #"{"bars":[[{"c":"C","b":4}]],"lyrics":["la"]}"# }.joined(separator: ",") }
+let longJS = #"[{"slug":"long","title":"Long","bpm":120,"key":"C","sections":["#
+    + #"{"name":"Intro","rows":["# + rows(2) + "]},"
+    + #"{"name":"Verse","rows":["# + rows(14) + "]},"
+    + #"{"name":"Out","rows":["# + rows(3) + "]}]}]"
+let longLib = try! SongLibrary.parse(Data(longJS.utf8))
+let lr = Rehearsal(synth: nil, sync: nil)
+lr.boot((longLib, "test")); lr.fire(.nextSection)
+let ls = lr.song!, verse = ls.firstRowOfSection[1], outro = ls.firstRowOfSection[2]
+var seen: [Int] = []
+lr.goRow(verse)
+while ls.rows[lr.row].sec == 1 { seen.append(lr.row - verse); lr.swipe(1) }
+check(seen == [0, 6, 11], "long verse: swipes land on lines \(seen) (5 new lines per screen, 1 kept for context)")
+check(lr.row == outro, "and the next swipe leaves for the next section")
+lr.swipe(-1)
+check(lr.row - verse == 9 && lr.pageRows().1 == outro - 1, "back from the next section -> the verse's last screen (line \(lr.row - verse))")
+lr.swipe(-1); let b1 = lr.row - verse
+lr.swipe(-1); let b2 = lr.row - verse
+check(b1 == 4 && b2 == 0, "back again -> line \(b1), then the verse's top (\(b2))")
+lr.swipe(-1)
+check(lr.row == 0, "back from the verse's top -> the intro")
 solo.fire(.play)
 
 // MARK: - linked screens

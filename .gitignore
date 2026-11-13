@@ -1,4 +1,6 @@
 app/songs.js
+# played parts of unreleased songs: private, like the lyrics
+midi/
 dist/
 __pycache__/
 .DS_Store

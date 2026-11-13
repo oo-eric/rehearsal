@@ -4,6 +4,14 @@ import SwiftUI
 /// use), high contrast. Sizes are fractions of the screen (the web version's vh/vw), so
 /// the same layout reads on a 65" TV, a Mac, an iPad and an iPhone.
 enum Theme {
+    /// Keyboard hints ("P tempo", "K to close") only where there is a keyboard to read
+    /// them for: the Mac. iPhone and iPad are driven by touch and pedals.
+    #if os(iOS)
+    static let keyHints = false
+    #else
+    static let keyHints = true
+    #endif
+
     static let bg = Color(hex: 0x0b0c0e)
     static let panel = Color(hex: 0x15171b)
     static let line = Color(hex: 0x2a2d33)

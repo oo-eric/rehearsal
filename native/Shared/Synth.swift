@@ -212,6 +212,13 @@ final class SynthCore {
         return true
     }
 
+    /// One note of a played bass part (MIDI), same voice as the generated bass.
+    func bass(note: Int, at t: Double, dur: Double, vel: Int) {
+        // velocity 100 = the generated bass's level; ghost notes at ~60 come out softer
+        let g = chordVolume * min(1.2, max(0.25, Double(vel) / 100))
+        add(bassNote(Double(note), t, t + max(0.05, dur - 0.01)).map { var x = $0; x.gain *= g; return x })
+    }
+
     /// Soft and sustained: two detuned saws per note through a lowpass.
     private func pad(_ notes: [Double], _ t: Double, _ end: Double) -> [Voice] {
         let rel = 0.18, peak = 0.32 / Double(notes.count)
@@ -487,6 +494,11 @@ final class Synth {
         if let t = core.coreTime(atMs: ms) {
             core.play(chord: chord, at: t, dur: dur, patch: patch, spb: spb, chords: chords, bass: bass)
         }
+    }
+
+    func bass(note: Int, atMs ms: Double, dur: Double, vel: Int) {
+        start()
+        if let t = core.coreTime(atMs: ms) { core.bass(note: note, at: t, dur: dur, vel: vel) }
     }
 
     func silenceChords() {

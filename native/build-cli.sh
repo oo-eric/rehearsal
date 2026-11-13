@@ -72,6 +72,9 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
 # --- the charts: songs.js (built by build.py) and the demo song, as plain resources ---
 cp ../app/songs.example.js "$APP/Contents/Resources/"
+if [[ -d ../midi ]]; then           # played parts (midi/<slug>-bass.mid)
+  mkdir -p "$APP/Contents/Resources/midi" && cp ../midi/*.mid "$APP/Contents/Resources/midi/" 2>/dev/null || true
+fi
 if [[ -f ../app/songs.js ]]; then
   cp ../app/songs.js "$APP/Contents/Resources/"
 else

@@ -12,8 +12,8 @@ struct StageView: View {
                 if let song = model.song {
                     VStack(spacing: 0) {
                         HeaderView(model: model, song: song, m: m)
-                        // Everything below the header is the page-turn zone: tap the
-                        // left third for back, the rest for next.
+                        // Everything below the header is the turn zone: tap the left third
+                        // for the previous line, the rest for the next; swipe for a page.
                         VStack(spacing: 0) {
                             MapView(model: model, song: song, m: m)
                             SectionView(model: model, song: song, m: m)
@@ -21,7 +21,12 @@ struct StageView: View {
                         }
                         .contentShape(Rectangle())
                         .gesture(DragGesture(minimumDistance: 0).onEnded { v in
-                            model.pointer(x: Double(v.location.x / max(1, m.w)))
+                            let dx = v.translation.width, dy = v.translation.height
+                            if abs(dx) > max(40, m.w * 0.05) && abs(dx) > abs(dy) * 1.5 {
+                                model.swipe(dx < 0 ? 1 : -1)     // finger left = forward, like a book
+                            } else if abs(dx) < 20 && abs(dy) < 20 {
+                                model.pointer(x: Double(v.location.x / max(1, m.w)))
+                            }                                     // anything else: a fumble, ignore
                         })
                     }
                 } else {
@@ -377,10 +382,12 @@ struct NextView: View {
                     .layoutPriority(-1)
             }
             Spacer(minLength: 0)
-            Text("→ next · ← back · ] [ section · P tempo · G page mode · B speed & loop · S songs · K pedal setup")
-                .font(Theme.sans(size * 0.7)).foregroundColor(Theme.faint).lineLimit(1)
-                .opacity(model.idle ? 0 : 1)
-                .layoutPriority(-2)
+            if Theme.keyHints {
+                Text("→ next · ← back · ] [ section · P tempo · G page mode · B speed & loop · S songs · K pedal setup")
+                    .font(Theme.sans(size * 0.7)).foregroundColor(Theme.faint).lineLimit(1)
+                    .opacity(model.idle ? 0 : 1)
+                    .layoutPriority(-2)
+            }
         }
         .padding(.top, m.vh(1)).padding(.bottom, m.vh(1.4)).padding(.horizontal, m.vw(2))
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }

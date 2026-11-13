@@ -69,6 +69,8 @@ final class Song: Decodable {
     private(set) var rows: [FlatRow] = []
     private(set) var bars: [FlatBar] = []
     private(set) var firstRowOfSection: [Int] = []
+    private(set) var barStart: [Double] = []     // chart beat each bar starts on
+    var bassPart: MidiPart?                       // midi/<slug>-bass.mid, if there is one
 
     enum CodingKeys: String, CodingKey { case slug, title, bpm, key, sections }
     required init(from d: Decoder) throws {
@@ -90,6 +92,7 @@ final class Song: Decodable {
                 let first = bars.count
                 for chords in row.bars {
                     let sum = chords.reduce(0) { $0 + $1.b }
+                    barStart.append((barStart.last ?? 0) + (bars.last?.beats ?? 0))
                     bars.append(FlatBar(row: rows.count, chords: chords, beats: sum > 0 ? sum : 4, num: barNum))
                     barNum += 1
                 }
@@ -113,6 +116,27 @@ final class Song: Decodable {
 /// - Mac: View > Show Songs Folder (~/Library/Application Support/OO Rehearsal/)
 enum SongLibrary {
     static func load() -> (songs: [Song], source: String) {
+        let lib = loadCharts()
+        attachParts(lib.songs)
+        return lib
+    }
+
+    /// MIDI parts: `midi/<slug>-bass.mid` in the user songs folder first, then the ones
+    /// built into the app (the repo's midi/ folder).
+    static func attachParts(_ songs: [Song], dirs: [URL]? = nil) {
+        let search = dirs ?? [userSongsFolder().appendingPathComponent("midi", isDirectory: true),
+                              Bundle.main.resourceURL?.appendingPathComponent("midi", isDirectory: true)].compactMap { $0 }
+        for song in songs {
+            song.bassPart = nil
+            for dir in search {
+                let url = dir.appendingPathComponent("\(song.slug)-bass.mid")
+                guard FileManager.default.fileExists(atPath: url.path) else { continue }
+                if let part = try? MidiPart.load(url, for: song), !part.notes.isEmpty { song.bassPart = part; break }
+            }
+        }
+    }
+
+    private static func loadCharts() -> (songs: [Song], source: String) {
         let user = userSongsFolder().appendingPathComponent("songs.js")
         var problems: [String] = []
         if FileManager.default.fileExists(atPath: user.path) {
